@@ -14,7 +14,7 @@
     "postinstall": "prisma generate"
   },
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.22",
