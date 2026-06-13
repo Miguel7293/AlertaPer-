@@ -17,10 +17,12 @@ export class AuthController {
 
   private setRefreshCookie(res: Response, token: string) {
     const days = Number(this.config.get('REFRESH_TOKEN_TTL_DAYS') ?? 7);
+    const isProd = process.env.NODE_ENV === 'production';
     res.cookie(REFRESH_COOKIE, token, {
       httpOnly: true,
-      secure: false, // true behind HTTPS in production
-      sameSite: 'lax',
+      // cross-site (Vercel <-> Render) requires SameSite=None + Secure over HTTPS
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
       maxAge: days * 86400000,
       path: '/auth',
     });
@@ -59,7 +61,12 @@ export class AuthController {
   @Post('logout')
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     await this.auth.logout(req.cookies?.[REFRESH_COOKIE]);
-    res.clearCookie(REFRESH_COOKIE, { path: '/auth' });
+    const isProd = process.env.NODE_ENV === 'production';
+    res.clearCookie(REFRESH_COOKIE, {
+      path: '/auth',
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+    });
     return { ok: true };
   }
 

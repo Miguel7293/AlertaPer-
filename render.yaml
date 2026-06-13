@@ -1,0 +1,30 @@
+# Render Blueprint for the DenunciaPE backend (NestJS).
+# Render → New → Blueprint → point at this repo. Fill the `sync: false` vars in the dashboard.
+services:
+  - type: web
+    name: denunciape-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ACCESS_TOKEN_TTL
+        value: "900"
+      - key: REFRESH_TOKEN_TTL_DAYS
+        value: "7"
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      # Fill these in the Render dashboard (kept out of the repo):
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: FACE_ENCRYPTION_KEY
+        sync: false
+      - key: CORS_ORIGIN          # the Vercel frontend URL, e.g. https://denunciape.vercel.app
+        sync: false
