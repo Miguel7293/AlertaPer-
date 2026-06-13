@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Page, Card, Button, Stepper } from '../components/ui';
-import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 
 const STEPS = [
@@ -34,19 +33,16 @@ const STEPS = [
 
 export default function Tutorial() {
   const nav = useNavigate();
-  const { refreshUser } = useAuth();
+  const { user } = useAuth();
   const [i, setI] = useState(0);
   const step = STEPS[i];
   const last = i === STEPS.length - 1;
 
-  async function finish() {
-    try {
-      await api.patch('/auth/me/tutorial-complete');
-      await refreshUser();
-    } catch {
-      // ignore
-    }
-    nav('/app');
+  function finish() {
+    // route to wherever onboarding still needs the user
+    if (user && !user.correoVerificado) nav('/onboarding/correo');
+    else if (user && !user.facialCompleto) nav('/onboarding/rostro');
+    else nav('/app');
   }
 
   return (

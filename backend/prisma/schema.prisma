@@ -1,0 +1,221 @@
+// DenunciaPE — Prisma schema mapped to the Supabase tables created by db/schema.sql.
+// Models are camelCase; @map / @@map bind them to the snake_case columns/tables.
+// No relation fields are declared on purpose — the services do explicit lookups by
+// id (same style as before), and the DB enforces the foreign keys.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Estado {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  descripcion String @unique
+  @@map("estado")
+}
+
+model Rol {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  descripcion String @unique
+  @@map("roles")
+}
+
+model ServidorPublico {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  correoElectronico String   @unique @map("correo_electronico")
+  usuario           String   @unique
+  dni               String
+  primerNombre      String?  @map("primer_nombre")
+  apellidoPaterno   String?  @map("apellido_paterno")
+  apellidoMaterno   String?  @map("apellido_materno")
+  telefono          String?
+  contrasenaHash    String   @map("contrasena_hash")
+  role              String?  @db.Uuid
+  creadoEn          DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  @@map("servidor_publico")
+}
+
+model Oficina {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  descripcion String
+  encargado   String? @db.Uuid
+  @@map("oficinas")
+}
+
+model Comisaria {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  descripcion  String
+  departamento String?
+  provincia    String?
+  distrito     String?
+  direccion    String?
+  ubicacion    String?
+  encargado    String? @db.Uuid
+  @@map("comisaria")
+}
+
+model Denunciante {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  correoElectronico  String    @unique @map("correo_electronico")
+  dni                String    @unique
+  primerNombre       String?   @map("primer_nombre")
+  apellidoPaterno    String?   @map("apellido_paterno")
+  apellidoMaterno    String?   @map("apellido_materno")
+  fechaNacimiento    DateTime? @map("fecha_nacimiento") @db.Date
+  fechaEmisionDni    DateTime? @map("fecha_emision_dni") @db.Date
+  telefono           String?
+  correoVerificado   Boolean   @default(false) @map("correo_verificado")
+  telefonoVerificado Boolean   @default(false) @map("telefono_verificado")
+  haDenunciadoAntes  Boolean   @default(false) @map("ha_denunciado_antes")
+  estadoIdentidad    String?   @map("estado_identidad")
+  contrasenaHash     String    @map("contrasena_hash")
+  creadoEn           DateTime  @default(now()) @map("creado_en") @db.Timestamptz(6)
+  @@map("denunciante")
+}
+
+model Consentimiento {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId    String   @map("usuario_id") @db.Uuid
+  tipo         String
+  concedido    Boolean  @default(true)
+  versionTexto String?  @map("version_texto")
+  concedidoEn  DateTime @default(now()) @map("concedido_en") @db.Timestamptz(6)
+  @@map("consentimientos")
+}
+
+model Denuncia {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigoSeguimiento   String?   @unique @map("codigo_seguimiento")
+  usuarioId           String    @map("usuario_id") @db.Uuid
+  tipo                String?
+  estadoId            String?   @map("estado_id") @db.Uuid
+  hora                DateTime? @db.Timestamptz(6)
+  departamento        String?
+  provincia           String?
+  distrito            String?
+  referenciaUbicacion String?   @map("referencia_ubicacion")
+  geoLatitud          Decimal?  @map("geo_latitud") @db.Decimal(10, 7)
+  geoLongitud         Decimal?  @map("geo_longitud") @db.Decimal(10, 7)
+  narrativa           String?
+  comisariaId         String?   @map("comisaria_id") @db.Uuid
+  enviadoEn           DateTime? @map("enviado_en") @db.Timestamptz(6)
+  consentimientoId    String?   @map("consentimiento_id") @db.Uuid
+  actualizadoEn       DateTime  @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+  creadoEn            DateTime  @default(now()) @map("creado_en") @db.Timestamptz(6)
+  @@map("denuncias")
+}
+
+model ServidorDenuncia {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  denuncia        String    @db.Uuid
+  servidorPublico String?   @map("servidor_publico") @db.Uuid
+  oficina         String    @db.Uuid
+  fechaIngreso    DateTime  @default(now()) @map("fecha_ingreso") @db.Timestamptz(6)
+  fechaSalida     DateTime? @map("fecha_salida") @db.Timestamptz(6)
+  comentario      String?
+  @@map("servidor_denuncia")
+}
+
+model ObjetoRobado {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  denunciaId      String   @map("denuncia_id") @db.Uuid
+  nombre          String
+  marcaModelo     String?  @map("marca_modelo")
+  valorAproximado Decimal? @map("valor_aproximado") @db.Decimal(12, 2)
+  descripcion     String?
+  @@map("objetos_robados")
+}
+
+model Sospechoso {
+  id                  String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  denuncia            String  @db.Uuid
+  descripcionPersonal String? @map("descripcion_personal")
+  descripcionHuida    String? @map("descripcion_huida")
+  @@map("sospechosos")
+}
+
+model Testigo {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  denuncia      String   @db.Uuid
+  nombre        String
+  relacion      String?
+  correo        String?
+  telefono      String?
+  fechaRegistro DateTime @default(now()) @map("fecha_registro") @db.Timestamptz(6)
+  @@map("testigos")
+}
+
+model Evidencia {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  denunciaId  String   @map("denuncia_id") @db.Uuid
+  urlArchivo  String   @map("url_archivo")
+  tipoArchivo String?  @map("tipo_archivo")
+  descripcion String?
+  subidoEn    DateTime @default(now()) @map("subido_en") @db.Timestamptz(6)
+  @@map("evidencias")
+}
+
+model CapturaFacial {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId         String   @map("usuario_id") @db.Uuid
+  tipoCaptura       String   @map("tipo_captura")
+  urlAlmacenamiento String   @map("url_almacenamiento")
+  consentimientoId  String?  @map("consentimiento_id") @db.Uuid
+  capturadoEn       DateTime @default(now()) @map("capturado_en") @db.Timestamptz(6)
+  @@map("capturas_faciales")
+}
+
+model VerificacionIdentidad {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId     String   @map("usuario_id") @db.Uuid
+  denunciaId    String?  @map("denuncia_id") @db.Uuid
+  paso          String
+  resultado     String
+  numeroIntento Int      @default(1) @map("numero_intento")
+  detalles      Json     @default("{}")
+  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  @@map("verificaciones_identidad")
+}
+
+model Notificacion {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId  String   @map("usuario_id") @db.Uuid
+  denunciaId String?  @map("denuncia_id") @db.Uuid
+  canal      String
+  plantilla  String?
+  estado     String
+  enviadoEn  DateTime @default(now()) @map("enviado_en") @db.Timestamptz(6)
+  @@map("notificaciones")
+}
+
+// --- Infraestructura de auth (no en el ER) ---
+model Session {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId        String    @map("usuario_id") @db.Uuid
+  tipoUsuario      String    @map("tipo_usuario")
+  refreshTokenHash String    @map("refresh_token_hash")
+  userAgent        String?   @map("user_agent")
+  ip               String?
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@map("sessions")
+}
+
+model OtpCode {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId   String    @map("usuario_id") @db.Uuid
+  canal       String
+  codeHash    String    @map("code_hash")
+  proposito   String
+  intentos    Int       @default(0)
+  expiraEn    DateTime  @map("expira_en") @db.Timestamptz(6)
+  consumidoEn DateTime? @map("consumido_en") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@map("otp_codes")
+}

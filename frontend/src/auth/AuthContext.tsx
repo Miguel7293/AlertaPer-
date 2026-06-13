@@ -3,23 +3,40 @@ import { api, setAccessToken } from '../api/client';
 
 export interface SeguroUser {
   id: string;
-  role: string;
+  tipo: string;
   dni: string;
-  email: string | null;
-  phone: string | null;
-  emailVerified: boolean;
-  phoneVerified: boolean;
-  hasFiledBefore: boolean;
-  tutorialCompletedAt: number | null;
+  correoElectronico: string;
+  primerNombre: string | null;
+  apellidoPaterno: string | null;
+  apellidoMaterno: string | null;
+  telefono: string | null;
+  correoVerificado: boolean;
+  telefonoVerificado: boolean;
+  haDenunciadoAntes: boolean;
+  estadoIdentidad: string;
+  facialCompleto: boolean;
+  onboardingCompleto: boolean;
+}
+
+export interface RegisterPayload {
+  dni: string;
+  correoElectronico: string;
+  primerNombre: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string;
+  fechaNacimiento: string;
+  telefono?: string;
+  fechaEmisionDni?: string;
+  contrasena: string;
 }
 
 interface AuthState {
   user: SeguroUser | null;
   loading: boolean;
-  register: (dni: string, password: string, email?: string, phone?: string) => Promise<SeguroUser>;
-  login: (identifier: string, password: string) => Promise<SeguroUser>;
+  register: (p: RegisterPayload) => Promise<SeguroUser>;
+  login: (identificador: string, contrasena: string) => Promise<SeguroUser>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
+  refreshUser: () => Promise<SeguroUser>;
 }
 
 const Ctx = createContext<AuthState>(null as any);
@@ -31,8 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const me = await api.get<SeguroUser>('/auth/me');
-        setUser(me);
+        setUser(await api.get<SeguroUser>('/auth/me'));
       } catch {
         setUser(null);
       } finally {
@@ -41,15 +57,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  async function register(dni: string, password: string, email?: string, phone?: string) {
-    const res = await api.post('/auth/register', { dni, password, email, phone }, false);
+  async function register(p: RegisterPayload) {
+    const res = await api.post('/auth/register', p, false);
     setAccessToken(res.access_token);
     setUser(res.user);
     return res.user as SeguroUser;
   }
 
-  async function login(identifier: string, password: string) {
-    const res = await api.post('/auth/login', { identifier, password }, false);
+  async function login(identificador: string, contrasena: string) {
+    const res = await api.post('/auth/login', { identificador, contrasena }, false);
     setAccessToken(res.access_token);
     setUser(res.user);
     return res.user as SeguroUser;
@@ -68,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function refreshUser() {
     const me = await api.get<SeguroUser>('/auth/me');
     setUser(me);
+    return me;
   }
 
   return (

@@ -1,35 +1,29 @@
 import { IsEmail, IsOptional, IsString, Matches, MinLength } from 'class-validator';
 
 export class RegisterDto {
-  @Matches(/^\d{8}$/, { message: 'dni must be 8 digits' })
+  @Matches(/^\d{8}$/, { message: 'dni debe tener 8 dígitos' })
   dni: string;
 
-  @IsOptional()
-  @IsEmail()
-  email?: string;
+  @IsEmail({}, { message: 'correo inválido' })
+  correoElectronico: string;
 
-  @IsOptional()
-  @IsString()
-  phone?: string;
+  @IsString() primerNombre: string;
+  @IsString() apellidoPaterno: string;
+  @IsString() apellidoMaterno: string;
+  @IsString() fechaNacimiento: string;
 
-  @MinLength(8, { message: 'password must be at least 8 characters' })
-  password: string;
+  @IsOptional() @IsString() fechaEmisionDni?: string;
+  @IsOptional() @IsString() telefono?: string;
+
+  @MinLength(8, { message: 'la contraseña debe tener al menos 8 caracteres' })
+  contrasena: string;
 }
 
 export class LoginDto {
-  @IsString()
-  identifier: string; // dni or email
-
-  @IsString()
-  password: string;
+  @IsString() identificador: string; // dni o correo
+  @IsString() contrasena: string;
 }
 
-export class OtpSendDto {
-  @IsString()
-  channel: 'email' | 'sms';
-}
-
-export class OtpVerifyDto {
-  @IsString()
-  code: string;
+export class EmailVerifyDto {
+  @IsString() codigo: string;
 }

@@ -1,17 +1,8 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Patch,
-  Post,
-  Req,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { LoginDto, RegisterDto } from './dto';
+import { EmailVerifyDto, LoginDto, RegisterDto } from './dto';
 import { JwtAuthGuard, AuthUser } from '../common/jwt-auth.guard';
 import { CurrentUser } from '../common/current-user.decorator';
 
@@ -28,7 +19,7 @@ export class AuthController {
     const days = Number(this.config.get('REFRESH_TOKEN_TTL_DAYS') ?? 7);
     res.cookie(REFRESH_COOKIE, token, {
       httpOnly: true,
-      secure: false, // dev only; true behind HTTPS in production
+      secure: false, // true behind HTTPS in production
       sameSite: 'lax',
       maxAge: days * 86400000,
       path: '/auth',
@@ -39,36 +30,35 @@ export class AuthController {
     return { ua: req.headers['user-agent'], ip: req.ip };
   }
 
+  private strip(result: any) {
+    const { refresh_token, ...rest } = result;
+    return rest;
+  }
+
   @Post('register')
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.auth.register(dto);
     this.setRefreshCookie(res, result.refresh_token);
-    return this.stripRefresh(result);
+    return this.strip(result);
   }
 
   @Post('login')
-  async login(
-    @Body() dto: LoginDto,
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const result = await this.auth.login(dto.identifier, dto.password, this.ctx(req));
+  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const result = await this.auth.login(dto.identificador, dto.contrasena, this.ctx(req));
     this.setRefreshCookie(res, result.refresh_token);
-    return this.stripRefresh(result);
+    return this.strip(result);
   }
 
   @Post('refresh')
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const token = req.cookies?.[REFRESH_COOKIE];
-    const result = await this.auth.refresh(token);
+    const result = await this.auth.refresh(req.cookies?.[REFRESH_COOKIE]);
     this.setRefreshCookie(res, result.refresh_token);
-    return this.stripRefresh(result);
+    return this.strip(result);
   }
 
   @Post('logout')
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const token = req.cookies?.[REFRESH_COOKIE];
-    await this.auth.logout(token);
+    await this.auth.logout(req.cookies?.[REFRESH_COOKIE]);
     res.clearCookie(REFRESH_COOKIE, { path: '/auth' });
     return { ok: true };
   }
@@ -80,14 +70,14 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Patch('me/tutorial-complete')
-  completeTutorial(@CurrentUser() user: AuthUser) {
-    return this.auth.completeTutorial(user.id);
+  @Post('email/send')
+  emailSend(@CurrentUser() user: AuthUser) {
+    return this.auth.emailSend(user.id);
   }
 
-  // Refresh token travels only in the httpOnly cookie — never echo it in the body.
-  private stripRefresh(result: any) {
-    const { refresh_token, ...rest } = result;
-    return rest;
+  @UseGuards(JwtAuthGuard)
+  @Post('email/verify')
+  emailVerify(@CurrentUser() user: AuthUser, @Body() dto: EmailVerifyDto) {
+    return this.auth.emailVerify(user.id, dto.codigo);
   }
 }

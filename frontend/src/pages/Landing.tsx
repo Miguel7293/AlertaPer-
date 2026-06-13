@@ -21,7 +21,7 @@ export default function Landing() {
             <Link to="/register" className="block rounded-xl bg-white px-4 py-3 text-center text-sm font-semibold text-brand-700 hover:bg-brand-50">
               Iniciar denuncia
             </Link>
-            <Link to="/track" className="block rounded-xl border border-white/30 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-white/10">
+            <Link to="/seguimiento" className="block rounded-xl border border-white/30 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-white/10">
               Hacer seguimiento
             </Link>
             <p className="pt-2 text-center text-sm text-brand-100">

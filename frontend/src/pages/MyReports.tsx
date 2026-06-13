@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Page, Card, StatusBadge, Button } from '../components/ui';
+import { Page, Card, EstadoPill, Button } from '../components/ui';
 import { api } from '../api/client';
 
 export default function MyReports() {
-  const [reports, setReports] = useState<any[]>([]);
+  const [denuncias, setDenuncias] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/reports').then(setReports).catch(() => setReports([])).finally(() => setLoading(false));
+    api.get('/denuncias').then(setDenuncias).catch(() => setDenuncias([])).finally(() => setLoading(false));
   }, []);
 
   return (
@@ -16,22 +16,23 @@ export default function MyReports() {
       <h1 className="mb-4 text-xl font-bold text-slate-900">Mis denuncias</h1>
       {loading ? (
         <p className="text-sm text-slate-400">Cargando…</p>
-      ) : reports.length === 0 ? (
+      ) : denuncias.length === 0 ? (
         <Card>
           <p className="text-sm text-slate-500">Aún no tienes denuncias registradas.</p>
           <div className="mt-4"><Link to="/denuncia/nueva"><Button>Nueva denuncia</Button></Link></div>
         </Card>
       ) : (
         <div className="space-y-3">
-          {reports.map((r) => (
-            <Link key={r.id} to={`/denuncia/${r.id}`}>
+          {denuncias.map((d) => (
+            <Link key={d.id} to={`/denuncia/${d.id}`}>
               <Card className="transition hover:border-brand-300">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-semibold text-slate-900">{r.trackingCode ?? 'Borrador'}</p>
-                    <p className="text-sm capitalize text-slate-500">{r.type ?? '—'} {r.district ? `· ${r.district}` : ''}</p>
+                    <p className="font-semibold text-slate-900">{d.codigoSeguimiento ?? 'Borrador'}</p>
+                    <p className="text-sm capitalize text-slate-500">{d.tipo ?? '—'} {d.distrito ? `· ${d.distrito}` : ''}</p>
+                    {d.oficinaActual && <p className="mt-0.5 text-xs text-slate-400">Oficina: {d.oficinaActual}</p>}
                   </div>
-                  <StatusBadge status={r.status} />
+                  <EstadoPill estado={d.estado} />
                 </div>
               </Card>
             </Link>

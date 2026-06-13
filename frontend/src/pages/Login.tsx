@@ -6,17 +6,18 @@ import { Page, Card, Button, Field, Alert } from '../components/ui';
 export default function Login() {
   const { login } = useAuth();
   const nav = useNavigate();
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
+  const [identificador, setIdentificador] = useState('');
+  const [contrasena, setContrasena] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function submit() {
-    setError('');
-    setBusy(true);
+    setError(''); setBusy(true);
     try {
-      const user = await login(identifier, password);
-      nav(user.hasFiledBefore ? '/app' : '/tutorial');
+      const user = await login(identificador, contrasena);
+      if (!user.correoVerificado) nav('/onboarding/correo');
+      else if (!user.facialCompleto) nav('/onboarding/rostro');
+      else nav('/app');
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -31,8 +32,8 @@ export default function Login() {
       <Card>
         <div className="space-y-4">
           {error && <Alert kind="error">{error}</Alert>}
-          <Field label="DNI o correo" value={identifier} onChange={setIdentifier} />
-          <Field label="Contraseña" type="password" value={password} onChange={setPassword} />
+          <Field label="DNI o correo" value={identificador} onChange={setIdentificador} />
+          <Field label="Contraseña" type="password" value={contrasena} onChange={setContrasena} />
           <Button onClick={submit} disabled={busy}>{busy ? 'Ingresando…' : 'Ingresar'}</Button>
           <p className="text-center text-sm text-slate-500">
             ¿No tienes cuenta? <Link to="/register" className="font-semibold text-brand-600">Regístrate</Link>

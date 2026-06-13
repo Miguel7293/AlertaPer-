@@ -11,6 +11,7 @@ import { Request } from 'express';
 export interface AuthUser {
   id: string;
   role: string;
+  tipo: 'denunciante' | 'servidor_publico';
 }
 
 // Validates our own short-lived access JWT (custom auth — no third-party provider).
@@ -32,7 +33,11 @@ export class JwtAuthGuard implements CanActivate {
       const payload = await this.jwt.verifyAsync(token, {
         secret: this.config.get<string>('JWT_ACCESS_SECRET'),
       });
-      (req as any).user = { id: payload.sub, role: payload.role } as AuthUser;
+      (req as any).user = {
+        id: payload.sub,
+        role: payload.role,
+        tipo: payload.tipo ?? 'denunciante',
+      } as AuthUser;
       return true;
     } catch {
       throw new UnauthorizedException('Invalid or expired access token');

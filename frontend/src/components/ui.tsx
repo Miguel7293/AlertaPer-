@@ -11,7 +11,7 @@ export function Logo({ light = false }: { light?: boolean }) {
           <path d="M9 12l2 2 4-4" />
         </svg>
       </div>
-      <span className={`text-lg font-semibold tracking-tight ${light ? 'text-white' : 'text-brand-700'}`}>SEGURO</span>
+      <span className={`text-lg font-semibold tracking-tight ${light ? 'text-white' : 'text-brand-700'}`}>DenunciaPE</span>
     </div>
   );
 }
@@ -162,6 +162,16 @@ export function Stepper({ steps, current }: { steps: string[]; current: number }
       ))}
     </div>
   );
+}
+
+// Colors an estado pill by matching its Spanish description.
+export function EstadoPill({ estado }: { estado: string | null }) {
+  if (!estado) return <span className="inline-block rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">Borrador</span>;
+  const e = estado.toLowerCase();
+  let cls = 'bg-brand-100 text-brand-700';
+  if (e.includes('recibida') || e.includes('resuelta')) cls = 'bg-emerald-100 text-emerald-700';
+  else if (e.includes('pendiente') || e.includes('observada') || e.includes('requerida')) cls = 'bg-amber-100 text-amber-700';
+  return <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${cls}`}>{estado}</span>;
 }
 
 const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
