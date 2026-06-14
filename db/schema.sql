@@ -108,12 +108,18 @@ create table if not exists denuncias (
   geo_latitud          numeric(10,7),
   geo_longitud         numeric(10,7),
   narrativa            text,
+  observo_sospechosos  boolean,
+  hubo_testigos        boolean,
   comisaria_id         uuid references comisaria(id),
   enviado_en           timestamptz,
   consentimiento_id    uuid references consentimientos(id),
   actualizado_en       timestamptz not null default now(),
   creado_en            timestamptz not null default now()
 );
+
+-- Migraciones idempotentes para proyectos donde `denuncias` ya existía.
+alter table denuncias add column if not exists observo_sospechosos boolean;
+alter table denuncias add column if not exists hubo_testigos boolean;
 
 -- servidor_denuncia: ruteo de la denuncia por oficinas = su historial de movimiento
 create table if not exists servidor_denuncia (

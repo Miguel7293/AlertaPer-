@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsIn,
   IsNumber,
   IsOptional,
@@ -8,6 +9,7 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 
 export class ActualizarDenunciaDto {
@@ -19,21 +21,23 @@ export class ActualizarDenunciaDto {
   @IsOptional() @IsString() @MaxLength(200) referenciaUbicacion?: string;
   @IsOptional() @IsNumber() @Min(-90) @Max(90) geoLatitud?: number;
   @IsOptional() @IsNumber() @Min(-180) @Max(180) geoLongitud?: number;
-  @IsOptional() @IsString() @MaxLength(2000) narrativa?: string;
+  @IsOptional() @IsString() @MinLength(30) @MaxLength(2000) narrativa?: string;
+  @IsOptional() @IsBoolean() observoSospechosos?: boolean;
+  @IsOptional() @IsBoolean() huboTestigos?: boolean;
 }
 
 export class ObjetoDto {
-  @IsString() @MaxLength(120) nombre: string;
-  @IsOptional() @IsString() @MaxLength(120) marcaModelo?: string;
+  @IsString() @MinLength(2) @MaxLength(120) nombre: string;
+  @IsString() @MinLength(2) @MaxLength(120) marcaModelo: string;
   // cabe en numeric(12,2): hasta 9,999,999,999.99
-  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(9999999999.99)
-  valorAproximado?: number;
+  @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) @Max(9999999999.99)
+  valorAproximado: number;
   @IsOptional() @IsString() @MaxLength(255) descripcion?: string;
 }
 
 export class SospechosoDto {
-  @IsOptional() @IsString() @MaxLength(1000) descripcionPersonal?: string;
-  @IsOptional() @IsString() @MaxLength(1000) descripcionHuida?: string;
+  @IsString() @MinLength(10) @MaxLength(1000) descripcionPersonal: string;
+  @IsString() @MinLength(5) @MaxLength(1000) descripcionHuida: string;
 }
 
 export class TestigoDto {
@@ -41,8 +45,8 @@ export class TestigoDto {
   @IsIn(['familia directa', 'familia indirecta', 'amigo y/o conocido', 'extraño'])
   relacion: string;
   @IsOptional() @IsString() @MaxLength(120) correo?: string;
-  @IsOptional() @Matches(/^(\d{9})?$/, { message: 'El teléfono debe tener 9 dígitos' })
-  telefono?: string;
+  @Matches(/^\d{9}$/, { message: 'El teléfono debe tener 9 dígitos' })
+  telefono: string;
 }
 
 export class EvidenciaDto {

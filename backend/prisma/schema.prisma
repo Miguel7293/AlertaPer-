@@ -100,10 +100,12 @@ model Denuncia {
   provincia           String?
   distrito            String?
   referenciaUbicacion String?   @map("referencia_ubicacion")
-  geoLatitud          Decimal?  @map("geo_latitud") @db.Decimal(10, 7)
-  geoLongitud         Decimal?  @map("geo_longitud") @db.Decimal(10, 7)
-  narrativa           String?
-  comisariaId         String?   @map("comisaria_id") @db.Uuid
+    geoLatitud          Decimal?  @map("geo_latitud") @db.Decimal(10, 7)
+    geoLongitud         Decimal?  @map("geo_longitud") @db.Decimal(10, 7)
+    narrativa           String?
+    observoSospechosos  Boolean?  @map("observo_sospechosos")
+    huboTestigos        Boolean?  @map("hubo_testigos")
+    comisariaId         String?   @map("comisaria_id") @db.Uuid
   enviadoEn           DateTime? @map("enviado_en") @db.Timestamptz(6)
   consentimientoId    String?   @map("consentimiento_id") @db.Uuid
   actualizadoEn       DateTime  @default(now()) @map("actualizado_en") @db.Timestamptz(6)

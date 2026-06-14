@@ -86,17 +86,22 @@ export class DenunciasService {
     if (dto.geoLatitud !== undefined) data.geoLatitud = dto.geoLatitud;
     if (dto.geoLongitud !== undefined) data.geoLongitud = dto.geoLongitud;
     if (dto.narrativa !== undefined) data.narrativa = dto.narrativa;
+    if (dto.observoSospechosos !== undefined) data.observoSospechosos = dto.observoSospechosos;
+    if (dto.huboTestigos !== undefined) data.huboTestigos = dto.huboTestigos;
     return this.prisma.denuncia.update({ where: { id }, data });
   }
 
   async agregarObjeto(usuarioId: string, id: string, dto: ObjetoDto) {
     await this.propia(usuarioId, id);
+    if (!dto.nombre.trim() || !dto.marcaModelo.trim()) {
+      throw new BadRequestException('Completa el nombre y la marca o característica del objeto');
+    }
     return this.prisma.objetoRobado.create({
       data: {
         denunciaId: id,
-        nombre: dto.nombre,
-        marcaModelo: dto.marcaModelo ?? null,
-        valorAproximado: dto.valorAproximado ?? null,
+        nombre: dto.nombre.trim(),
+        marcaModelo: dto.marcaModelo.trim(),
+        valorAproximado: dto.valorAproximado,
         descripcion: dto.descripcion ?? null,
       },
     });
@@ -104,15 +109,29 @@ export class DenunciasService {
 
   async agregarSospechoso(usuarioId: string, id: string, dto: SospechosoDto) {
     await this.propia(usuarioId, id);
+    if (!dto.descripcionPersonal.trim() || !dto.descripcionHuida.trim()) {
+      throw new BadRequestException('Completa la descripción y la forma de huida');
+    }
     return this.prisma.sospechoso.create({
-      data: { denuncia: id, descripcionPersonal: dto.descripcionPersonal ?? null, descripcionHuida: dto.descripcionHuida ?? null },
+      data: {
+        denuncia: id,
+        descripcionPersonal: dto.descripcionPersonal.trim(),
+        descripcionHuida: dto.descripcionHuida.trim(),
+      },
     });
   }
 
   async agregarTestigo(usuarioId: string, id: string, dto: TestigoDto) {
     await this.propia(usuarioId, id);
+    if (!dto.nombre.trim()) throw new BadRequestException('Completa el nombre del testigo');
     return this.prisma.testigo.create({
-      data: { denuncia: id, nombre: dto.nombre, relacion: dto.relacion, correo: dto.correo ?? null, telefono: dto.telefono ?? null },
+      data: {
+        denuncia: id,
+        nombre: dto.nombre.trim(),
+        relacion: dto.relacion,
+        correo: dto.correo ?? null,
+        telefono: dto.telefono,
+      },
     });
   }
 
@@ -127,7 +146,37 @@ export class DenunciasService {
     const d = await this.propia(usuarioId, id);
     if (d.enviadoEn) throw new BadRequestException('La denuncia ya fue enviada');
     if (!d.tipo) throw new BadRequestException('Selecciona el tipo (robo o hurto)');
-    if (!d.narrativa) throw new BadRequestException('Describe lo que ocurrió');
+    if (!d.hora) throw new BadRequestException('Indica la fecha y hora del hecho');
+    if (d.hora.getTime() > Date.now()) throw new BadRequestException('La fecha del hecho no puede estar en el futuro');
+    if (!d.departamento?.trim()) throw new BadRequestException('Indica el departamento');
+    if (!d.provincia?.trim()) throw new BadRequestException('Indica la provincia');
+    if (!d.distrito?.trim()) throw new BadRequestException('Indica el distrito');
+    if (!d.referenciaUbicacion?.trim()) throw new BadRequestException('Indica una referencia del lugar');
+    if (!d.narrativa || d.narrativa.trim().length < 30) {
+      throw new BadRequestException('Describe lo ocurrido con al menos 30 caracteres');
+    }
+    if (d.observoSospechosos === null) {
+      throw new BadRequestException('Indica si observaste a los sospechosos');
+    }
+    if (d.huboTestigos === null) {
+      throw new BadRequestException('Indica si hubo testigos');
+    }
+
+    const [objetos, sospechosos, testigos] = await Promise.all([
+      this.prisma.objetoRobado.count({ where: { denunciaId: id } }),
+      this.prisma.sospechoso.count({ where: { denuncia: id } }),
+      this.prisma.testigo.count({ where: { denuncia: id } }),
+    ]);
+    if (objetos < 1) throw new BadRequestException('Registra al menos un objeto sustraído');
+    if (d.observoSospechosos && sospechosos < 1) {
+      throw new BadRequestException('Completa la descripción de los sospechosos');
+    }
+    if (d.huboTestigos && testigos < 1) {
+      throw new BadRequestException('Registra al menos un testigo');
+    }
+    if (!dto.consentimientos.includes('truthfulness') || !dto.consentimientos.includes('data_processing')) {
+      throw new BadRequestException('Debes aceptar la declaración y el tratamiento de datos');
+    }
 
     let consentimientoId: string | null = null;
     for (const tipo of dto.consentimientos) {
