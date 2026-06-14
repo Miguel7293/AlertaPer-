@@ -25,6 +25,6 @@ async function bootstrap() {
 
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);
-  new Logger('Bootstrap').log(`SEGURO API running on http://localhost:${port} (in-memory store, no DB)`);
+  new Logger('Bootstrap').log(`DenunciaPE API en el puerto ${port} (Prisma + Supabase Postgres)`);
 }
 bootstrap();
