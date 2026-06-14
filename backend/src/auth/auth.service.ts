@@ -11,6 +11,7 @@ import { Denunciante } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { audit } from '../common/audit.util';
 import { RegisterDto } from './dto';
+import { EmailService } from './email.service';
 
 // NOTE: bcryptjs is used for zero-native-build install reliability on Windows.
 // docs/PLAN.md specifies Argon2id for production — swap here when ready.
@@ -21,6 +22,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly email: EmailService,
   ) {}
 
   private async facialCompleto(usuarioId: string): Promise<boolean> {
@@ -105,11 +107,23 @@ export class AuthService {
         expiraEn: new Date(Date.now() + 10 * 60000),
       },
     });
+    const delivery = await this.email.sendVerificationCode(d.correoElectronico, codigo);
     await this.prisma.notificacion.create({
-      data: { usuarioId, canal: 'email', plantilla: 'email_verify', estado: 'mocked' },
+      data: {
+        usuarioId,
+        canal: 'email',
+        plantilla: 'email_verify',
+        estado: delivery.mode === 'smtp' ? 'sent' : 'mocked',
+      },
     });
     audit(usuarioId, 'auth.email_code_sent', 'denunciante', usuarioId);
-    return { sent: true, destino: d.correoElectronico, devCode: codigo, expiraEnSeg: 600 };
+    return {
+      sent: true,
+      destino: d.correoElectronico,
+      deliveryMode: delivery.mode,
+      devCode: delivery.mode === 'demo' ? delivery.devCode : undefined,
+      expiraEnSeg: 600,
+    };
   }
 
   async emailVerify(usuarioId: string, codigo: string) {

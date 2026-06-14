@@ -18,7 +18,7 @@ export default function Register() {
     setError(''); setBusy(true);
     try {
       await register(f);
-      nav('/tutorial');
+      nav('/onboarding/correo');
     } catch (e: any) {
       setError(e.message);
     } finally {

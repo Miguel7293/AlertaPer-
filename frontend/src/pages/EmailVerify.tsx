@@ -8,6 +8,7 @@ export default function EmailVerify() {
   const nav = useNavigate();
   const { user, refreshUser } = useAuth();
   const [devCode, setDevCode] = useState('');
+  const [deliveryMode, setDeliveryMode] = useState<'smtp' | 'demo' | ''>('');
   const [codigo, setCodigo] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -17,7 +18,8 @@ export default function EmailVerify() {
     try {
       const res = await api.post('/auth/email/send');
       if (res.alreadyVerified) { nav('/onboarding/rostro'); return; }
-      setDevCode(res.devCode);
+      setDeliveryMode(res.deliveryMode ?? (res.devCode ? 'demo' : 'smtp'));
+      setDevCode(res.devCode ?? '');
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -56,7 +58,8 @@ export default function EmailVerify() {
         </p>
         <div className="mt-4 space-y-4">
           {error && <Alert kind="error">{error}</Alert>}
-          {devCode && <Alert kind="info">Código de demostración: <b>{devCode}</b> (en producción llega a tu correo).</Alert>}
+          {deliveryMode === 'smtp' && <Alert kind="success">Te enviamos el código. Revisa tu bandeja de entrada.</Alert>}
+          {devCode && <Alert kind="info">Código de demostración: <b>{devCode}</b> (configura SMTP para enviarlo por correo real).</Alert>}
           <Field label="Código de verificación" value={codigo} onChange={setCodigo} placeholder="6 dígitos" />
           <Button onClick={verify} disabled={busy || !codigo}>Verificar correo</Button>
           <button onClick={send} disabled={busy} className="block w-full text-center text-sm text-slate-400">Reenviar código</button>
