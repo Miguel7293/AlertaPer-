@@ -12,6 +12,7 @@ import { Denunciante, ServidorPublico } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { audit } from '../common/audit.util';
 import { ROLES, ROL_DESCRIPCION, SLUG_POR_DESCRIPCION } from '../store/roles';
+import { ESTADOS } from '../store/estados';
 import { CrearOficialDto, RegisterDto } from './dto';
 import { EmailService } from './email.service';
 
@@ -358,5 +359,76 @@ export class AuthService {
   async listarComisarias() {
     const cs = await this.prisma.comisaria.findMany({ orderBy: { descripcion: 'asc' } });
     return cs.map((c) => ({ id: c.id, descripcion: c.descripcion, distrito: c.distrito }));
+  }
+
+  async resumenOficial(solicitante: { id: string; role: string }) {
+    const servidor = await this.prisma.servidorPublico.findUnique({
+      where: { id: solicitante.id },
+    });
+    if (!servidor) throw new UnauthorizedException('Servidor público no encontrado');
+
+    const where: any = { enviadoEn: { not: null } };
+    if (
+      solicitante.role === ROLES.ENCARGADO_COMISARIA ||
+      solicitante.role === ROLES.POLICIA
+    ) {
+      if (!servidor.comisariaId) {
+        return {
+          metricas: { total: 0, recibidas: 0, investigacion: 0, resueltas: 0 },
+          recientes: [],
+        };
+      }
+      where.comisariaId = servidor.comisariaId;
+    }
+
+    if (solicitante.role === ROLES.FISCAL) {
+      const asignaciones = await this.prisma.servidorDenuncia.findMany({
+        where: { servidorPublico: servidor.id, fechaSalida: null },
+        select: { denuncia: true },
+      });
+      where.id = { in: asignaciones.map((a) => a.denuncia) };
+    }
+
+    const [estados, comisarias] = await Promise.all([
+      this.prisma.estado.findMany(),
+      this.prisma.comisaria.findMany(),
+    ]);
+
+    const estadoPorId = new Map(estados.map((e) => [e.id, e.descripcion]));
+    const idPorEstado = new Map(estados.map((e) => [e.descripcion, e.id]));
+    const comisariaPorId = new Map(comisarias.map((c) => [c.id, c.descripcion]));
+    const descripcionEstado = (estadoId: string | null) =>
+      estadoId ? estadoPorId.get(estadoId) ?? 'Sin estado' : 'Borrador';
+
+    const withEstado = (descripcion: string) => {
+      const estadoId = idPorEstado.get(descripcion);
+      return estadoId ? { ...where, estadoId } : { ...where, id: { in: [] } };
+    };
+
+    const [total, recibidas, investigacion, resueltas, denuncias] = await Promise.all([
+      this.prisma.denuncia.count({ where }),
+      this.prisma.denuncia.count({ where: withEstado(ESTADOS.RECIBIDA) }),
+      this.prisma.denuncia.count({ where: withEstado(ESTADOS.EN_INVESTIGACION) }),
+      this.prisma.denuncia.count({ where: withEstado(ESTADOS.RESUELTA) }),
+      this.prisma.denuncia.findMany({
+        where,
+        orderBy: { actualizadoEn: 'desc' },
+        take: 50,
+      }),
+    ]);
+
+    return {
+      metricas: { total, recibidas, investigacion, resueltas },
+      recientes: denuncias.map((d) => ({
+        id: d.id,
+        codigoSeguimiento: d.codigoSeguimiento,
+        tipo: d.tipo,
+        estado: descripcionEstado(d.estadoId),
+        distrito: d.distrito,
+        comisaria: d.comisariaId ? comisariaPorId.get(d.comisariaId) ?? null : null,
+        enviadoEn: d.enviadoEn,
+        actualizadoEn: d.actualizadoEn,
+      })),
+    };
   }
 }

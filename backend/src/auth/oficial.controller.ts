@@ -48,6 +48,12 @@ export class OficialController {
     return this.auth.meOficial(user.id);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('resumen')
+  resumen(@CurrentUser() user: AuthUser) {
+    return this.auth.resumenOficial(user);
+  }
+
   // --- Gestión de cuentas (solo Super Admin y Encargado de Comisaría) ---
 
   @UseGuards(JwtAuthGuard, RolesGuard)

@@ -3,11 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
 // Header mark: cropped icon + wordmark. The full logo is used only on the landing.
-export function Logo({ className = 'h-8' }: { light?: boolean; className?: string }) {
+export function Logo({ className = 'h-8', light = false }: { light?: boolean; className?: string }) {
   return (
     <span className="flex items-center gap-2">
       <img src="/IconoDenunciaPE.png" alt="DenunciaPE" className={`${className} w-auto select-none`} draggable={false} />
-      <span className="text-lg font-semibold tracking-tight text-brand-700">DenunciaPE</span>
+      <span className={`text-lg font-semibold tracking-tight ${light ? 'text-white' : 'text-brand-700'}`}>DenunciaPE</span>
     </span>
   );
 }
