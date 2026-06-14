@@ -7,13 +7,17 @@ import { useAuth } from '../auth/AuthContext';
 export default function EmailVerify() {
   const nav = useNavigate();
   const { user, refreshUser } = useAuth();
+  const autoSendKey = user?.id ? `seguro_email_auto_sent_${user.id}` : '';
   const [devCode, setDevCode] = useState('');
   const [deliveryMode, setDeliveryMode] = useState<'smtp' | 'demo' | ''>('');
   const [codigo, setCodigo] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function send() {
+  async function send(force = false) {
+    if (!force && autoSendKey && sessionStorage.getItem(autoSendKey)) return;
+    if (!force && autoSendKey) sessionStorage.setItem(autoSendKey, '1');
+
     setError(''); setBusy(true);
     try {
       const res = await api.post('/auth/email/send');
@@ -21,13 +25,14 @@ export default function EmailVerify() {
       setDeliveryMode(res.deliveryMode ?? (res.devCode ? 'demo' : 'smtp'));
       setDevCode(res.devCode ?? '');
     } catch (e: any) {
+      if (!force && autoSendKey) sessionStorage.removeItem(autoSendKey);
       setError(e.message);
     } finally {
       setBusy(false);
     }
   }
 
-  useEffect(() => { send(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { send(); /* eslint-disable-next-line */ }, [autoSendKey]);
 
   async function verify() {
     setError(''); setBusy(true);
