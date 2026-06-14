@@ -12,6 +12,8 @@ import NewComplaint from './pages/NewComplaint';
 import MyReports from './pages/MyReports';
 import ReportDetail from './pages/ReportDetail';
 import Track from './pages/Track';
+import OficialLogin from './pages/OficialLogin';
+import OficialPanel from './pages/OficialPanel';
 
 function Loading() {
   return <div className="grid min-h-screen place-items-center text-slate-400">Cargando…</div>;
@@ -42,6 +44,8 @@ export default function App() {
       <Route path="/register" element={<Register />} />
       <Route path="/login" element={<Login />} />
       <Route path="/seguimiento" element={<Track />} />
+      <Route path="/oficial/login" element={<OficialLogin />} />
+      <Route path="/oficial" element={<OficialPanel />} />
 
       <Route path="/tutorial" element={<Protected><Tutorial /></Protected>} />
       <Route path="/onboarding/correo" element={<Protected><EmailVerify /></Protected>} />

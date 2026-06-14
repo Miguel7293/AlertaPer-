@@ -33,6 +33,7 @@ export default function NewComplaint() {
 
   const idx = ORDER.indexOf(step);
   const next = () => { setError(''); setStep(ORDER[idx + 1]); };
+  const back = () => { if (idx > 0) { setError(''); setStep(ORDER[idx - 1]); } };
 
   async function ensure(): Promise<string> {
     if (reportId) return reportId;
@@ -83,7 +84,15 @@ export default function NewComplaint() {
     <Page>
       {step !== 'done' && (
         <>
-          <p className="mb-2 text-sm font-medium text-slate-500">Nueva denuncia · paso {idx + 1} de {ORDER.length - 1}</p>
+          <div className="mb-2 flex items-center gap-2">
+            {idx > 0 && (
+              <button onClick={back} className="flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-brand-600">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+                Atrás
+              </button>
+            )}
+            <p className="text-sm font-medium text-slate-500">Nueva denuncia · paso {idx + 1} de {ORDER.length - 1}</p>
+          </div>
           <Stepper steps={ORDER.slice(0, -1)} current={idx} />
         </>
       )}
@@ -110,10 +119,10 @@ export default function NewComplaint() {
           <h2 className="mb-4 text-lg font-bold text-slate-900">¿Cuándo y dónde?</h2>
           <div className="space-y-4">
             <Field label="Fecha y hora del hecho" type="datetime-local" value={hora} onChange={setHora} />
-            <Field label="Departamento" value={departamento} onChange={setDepartamento} placeholder="Ej. Lima" />
-            <Field label="Provincia" value={provincia} onChange={setProvincia} placeholder="Ej. Lima" />
-            <Field label="Distrito" value={distrito} onChange={setDistrito} placeholder="Ej. Miraflores" hint="Determina la comisaría asignada" />
-            <Field label="Referencia del lugar" value={referenciaUbicacion} onChange={setReferencia} placeholder="Av. / cruce / referencia" />
+            <Field label="Departamento" value={departamento} onChange={setDepartamento} placeholder="Ej. Lima" maxLength={80} />
+            <Field label="Provincia" value={provincia} onChange={setProvincia} placeholder="Ej. Lima" maxLength={80} />
+            <Field label="Distrito" value={distrito} onChange={setDistrito} placeholder="Ej. Miraflores" hint="Determina la comisaría asignada" maxLength={80} />
+            <Field label="Referencia del lugar" value={referenciaUbicacion} onChange={setReferencia} placeholder="Av. / cruce / referencia" maxLength={200} />
             <Button disabled={busy} onClick={async () => { await save({ hora, departamento, provincia, distrito, referenciaUbicacion }); next(); }}>Continuar</Button>
           </div>
         </Card>
@@ -123,7 +132,7 @@ export default function NewComplaint() {
         <Card>
           <h2 className="mb-4 text-lg font-bold text-slate-900">Describe lo que pasó</h2>
           <div className="space-y-4">
-            <TextArea label="Relato de los hechos" value={narrativa} onChange={setNarrativa} rows={6} placeholder="Cuenta qué pasó, cómo y qué te sustrajeron." />
+            <TextArea label="Relato de los hechos" value={narrativa} onChange={setNarrativa} rows={6} maxLength={2000} placeholder="Cuenta qué pasó, cómo y qué te sustrajeron." />
             <Button disabled={!narrativa.trim() || busy} onClick={async () => { await save({ narrativa }); next(); }}>Continuar</Button>
           </div>
         </Card>
@@ -136,9 +145,9 @@ export default function NewComplaint() {
           <div className="space-y-4">
             {objetos.map((o, i) => (
               <div key={i} className="space-y-2 rounded-xl bg-slate-50 p-3">
-                <Field label={`Objeto ${i + 1}`} value={o.nombre} onChange={(v) => setObjetos(objetos.map((x, j) => j === i ? { ...x, nombre: v } : x))} placeholder="Ej. Celular" />
-                <Field label="Marca / modelo" value={o.marcaModelo} onChange={(v) => setObjetos(objetos.map((x, j) => j === i ? { ...x, marcaModelo: v } : x))} />
-                <Field label="Valor aprox. (S/)" type="number" value={o.valorAproximado} onChange={(v) => setObjetos(objetos.map((x, j) => j === i ? { ...x, valorAproximado: v } : x))} />
+                <Field label={`Objeto ${i + 1}`} value={o.nombre} onChange={(v) => setObjetos(objetos.map((x, j) => j === i ? { ...x, nombre: v } : x))} placeholder="Ej. Celular" maxLength={120} />
+                <Field label="Marca / modelo" value={o.marcaModelo} onChange={(v) => setObjetos(objetos.map((x, j) => j === i ? { ...x, marcaModelo: v } : x))} maxLength={120} />
+                <Field label="Valor aprox. (S/)" value={o.valorAproximado} onChange={(v) => setObjetos(objetos.map((x, j) => j === i ? { ...x, valorAproximado: v } : x))} digitsOnly maxLength={10} inputMode="numeric" placeholder="0" />
               </div>
             ))}
             <button onClick={() => setObjetos([...objetos, { nombre: '', marcaModelo: '', valorAproximado: '' }])} className="text-sm font-semibold text-brand-600">+ Agregar otro objeto</button>
@@ -152,8 +161,8 @@ export default function NewComplaint() {
           <h2 className="mb-1 text-lg font-bold text-slate-900">Sospechosos</h2>
           <p className="mb-4 text-sm text-slate-500">Si los viste, descríbelos. Opcional.</p>
           <div className="space-y-4">
-            <TextArea label="Descripción física" value={sospPersonal} onChange={setSospPersonal} rows={3} placeholder="Estatura, contextura, ropa, rasgos…" />
-            <TextArea label="Cómo huyeron" value={sospHuida} onChange={setSospHuida} rows={2} placeholder="A pie, en moto, vehículo, dirección…" />
+            <TextArea label="Descripción física" value={sospPersonal} onChange={setSospPersonal} rows={3} maxLength={1000} placeholder="Estatura, contextura, ropa, rasgos…" />
+            <TextArea label="Cómo huyeron" value={sospHuida} onChange={setSospHuida} rows={2} maxLength={1000} placeholder="A pie, en moto, vehículo, dirección…" />
             <Button onClick={next}>Continuar</Button>
           </div>
         </Card>
@@ -166,14 +175,14 @@ export default function NewComplaint() {
           <div className="space-y-4">
             {testigos.map((t, i) => (
               <div key={i} className="space-y-2 rounded-xl bg-slate-50 p-3">
-                <Field label={`Testigo ${i + 1}`} value={t.nombre} onChange={(v) => setTestigos(testigos.map((x, j) => j === i ? { ...x, nombre: v } : x))} placeholder="Nombre" />
+                <Field label={`Testigo ${i + 1}`} value={t.nombre} onChange={(v) => setTestigos(testigos.map((x, j) => j === i ? { ...x, nombre: v } : x))} placeholder="Nombre" maxLength={120} />
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium text-slate-700">Relación</span>
                   <select value={t.relacion} onChange={(e) => setTestigos(testigos.map((x, j) => j === i ? { ...x, relacion: e.target.value } : x))} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm">
                     {RELACIONES.map((r) => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </label>
-                <Field label="Teléfono" value={t.telefono} onChange={(v) => setTestigos(testigos.map((x, j) => j === i ? { ...x, telefono: v } : x))} />
+                <Field label="Teléfono" value={t.telefono} onChange={(v) => setTestigos(testigos.map((x, j) => j === i ? { ...x, telefono: v } : x))} digitsOnly maxLength={9} inputMode="tel" />
               </div>
             ))}
             <button onClick={() => setTestigos([...testigos, { nombre: '', relacion: 'extraño', telefono: '' }])} className="text-sm font-semibold text-brand-600">+ Agregar otro testigo</button>

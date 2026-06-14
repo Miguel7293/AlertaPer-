@@ -28,7 +28,7 @@ export default function Track() {
       <Card>
         <div className="space-y-4">
           {error && <Alert kind="error">{error}</Alert>}
-          <Field label="Código de seguimiento" value={codigo} onChange={setCodigo} placeholder="DEN-2026-0000000" />
+          <Field label="Código de seguimiento" value={codigo} onChange={setCodigo} placeholder="DEN-2026-0000000" maxLength={20} />
           <Button onClick={consultar} disabled={busy || !codigo}>{busy ? 'Consultando…' : 'Consultar'}</Button>
         </div>
       </Card>

@@ -1,29 +1,72 @@
-import { IsEmail, IsOptional, IsString, Matches, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class RegisterDto {
-  @Matches(/^\d{8}$/, { message: 'dni debe tener 8 dígitos' })
+  @Matches(/^\d{8}$/, { message: 'El DNI debe tener 8 dígitos' })
   dni: string;
 
-  @IsEmail({}, { message: 'correo inválido' })
+  @IsEmail({}, { message: 'Correo inválido' })
+  @MaxLength(120, { message: 'El correo es demasiado largo' })
   correoElectronico: string;
 
-  @IsString() primerNombre: string;
-  @IsString() apellidoPaterno: string;
-  @IsString() apellidoMaterno: string;
-  @IsString() fechaNacimiento: string;
+  @IsString() @MaxLength(60, { message: 'Nombre demasiado largo' })
+  primerNombre: string;
 
-  @IsOptional() @IsString() fechaEmisionDni?: string;
-  @IsOptional() @IsString() telefono?: string;
+  @IsString() @MaxLength(60, { message: 'Apellido demasiado largo' })
+  apellidoPaterno: string;
 
-  @MinLength(8, { message: 'la contraseña debe tener al menos 8 caracteres' })
+  @IsString() @MaxLength(60, { message: 'Apellido demasiado largo' })
+  apellidoMaterno: string;
+
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Fecha de nacimiento inválida' })
+  fechaNacimiento: string;
+
+  @IsOptional() @IsString() @MaxLength(20)
+  fechaEmisionDni?: string;
+
+  // teléfono peruano: exactamente 9 dígitos (o vacío)
+  @IsOptional()
+  @Matches(/^(\d{9})?$/, { message: 'El teléfono debe tener 9 dígitos' })
+  telefono?: string;
+
+  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres' })
+  @MaxLength(72, { message: 'La contraseña no puede superar 72 caracteres' })
   contrasena: string;
 }
 
 export class LoginDto {
-  @IsString() identificador: string; // dni o correo
-  @IsString() contrasena: string;
+  @IsString() @MaxLength(120)
+  identificador: string; // dni o correo
+
+  @IsString() @MaxLength(72)
+  contrasena: string;
 }
 
 export class EmailVerifyDto {
-  @IsString() codigo: string;
+  @Matches(/^\d{6}$/, { message: 'El código debe tener 6 dígitos' })
+  codigo: string;
+}
+
+export class LoginOficialDto {
+  @IsString() @MaxLength(120)
+  usuario: string; // usuario, correo o dni
+
+  @IsString() @MaxLength(72)
+  contrasena: string;
+}
+
+export class CrearOficialDto {
+  @IsString() @MaxLength(120) usuario: string;
+  @IsEmail({}, { message: 'Correo inválido' }) @MaxLength(120) correoElectronico: string;
+  @Matches(/^\d{8}$/, { message: 'El DNI debe tener 8 dígitos' }) dni: string;
+  @IsString() @MaxLength(60) primerNombre: string;
+  @IsString() @MaxLength(60) apellidoPaterno: string;
+  @IsString() @MaxLength(60) apellidoMaterno: string;
+  @MinLength(8) @MaxLength(72) contrasena: string;
+
+  // solo lo usa el Super Admin; el Encargado siempre crea 'policia' en su comisaría
+  @IsOptional() @IsIn(['encargado_comisaria', 'policia', 'fiscal'])
+  rol?: string;
+
+  @IsOptional() @IsUUID()
+  comisariaId?: string;
 }

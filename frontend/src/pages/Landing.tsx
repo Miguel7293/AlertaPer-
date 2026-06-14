@@ -35,6 +35,9 @@ export default function Landing() {
           <span>Ley 29733</span><span>•</span>
           <span>Validación RENIEC</span>
         </div>
+        <p className="mt-4 text-center text-xs text-slate-400">
+          <Link to="/oficial/login" className="font-medium text-slate-500 hover:text-brand-600">Acceso institucional (PNP / Fiscalía)</Link>
+        </p>
       </div>
     </div>
   );

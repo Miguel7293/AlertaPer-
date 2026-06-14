@@ -36,6 +36,7 @@ model ServidorPublico {
   telefono          String?
   contrasenaHash    String   @map("contrasena_hash")
   role              String?  @db.Uuid
+  comisariaId       String?  @map("comisaria_id") @db.Uuid
   creadoEn          DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
   @@map("servidor_publico")
 }

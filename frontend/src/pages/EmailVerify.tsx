@@ -60,7 +60,7 @@ export default function EmailVerify() {
           {error && <Alert kind="error">{error}</Alert>}
           {deliveryMode === 'smtp' && <Alert kind="success">Te enviamos el código. Revisa tu bandeja de entrada.</Alert>}
           {devCode && <Alert kind="info">Código de demostración: <b>{devCode}</b> (configura SMTP para enviarlo por correo real).</Alert>}
-          <Field label="Código de verificación" value={codigo} onChange={setCodigo} placeholder="6 dígitos" />
+          <Field label="Código de verificación" value={codigo} onChange={setCodigo} placeholder="6 dígitos" digitsOnly maxLength={6} inputMode="numeric" />
           <Button onClick={verify} disabled={busy || !codigo}>Verificar correo</Button>
           <button onClick={send} disabled={busy} className="block w-full text-center text-sm text-slate-400">Reenviar código</button>
         </div>

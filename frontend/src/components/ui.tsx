@@ -87,6 +87,9 @@ export function Field({
   type = 'text',
   placeholder,
   hint,
+  maxLength,
+  inputMode,
+  digitsOnly = false,
 }: {
   label: string;
   value: string;
@@ -94,7 +97,15 @@ export function Field({
   type?: string;
   placeholder?: string;
   hint?: string;
+  maxLength?: number;
+  inputMode?: 'text' | 'numeric' | 'tel' | 'email' | 'decimal';
+  digitsOnly?: boolean;
 }) {
+  const handle = (raw: string) => {
+    let v = digitsOnly ? raw.replace(/\D/g, '') : raw;
+    if (maxLength != null) v = v.slice(0, maxLength);
+    onChange(v);
+  };
   return (
     <label className="block">
       <span className="mb-1 block text-sm font-medium text-slate-700">{label}</span>
@@ -102,7 +113,9 @@ export function Field({
         type={type}
         value={value}
         placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
+        maxLength={maxLength}
+        inputMode={inputMode}
+        onChange={(e) => handle(e.target.value)}
         className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
       />
       {hint && <span className="mt-1 block text-xs text-slate-400">{hint}</span>}
@@ -116,21 +129,29 @@ export function TextArea({
   onChange,
   placeholder,
   rows = 4,
+  maxLength,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   rows?: number;
+  maxLength?: number;
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-slate-700">{label}</span>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-sm font-medium text-slate-700">{label}</span>
+        {maxLength != null && (
+          <span className="text-xs text-slate-400">{value.length}/{maxLength}</span>
+        )}
+      </div>
       <textarea
         value={value}
         rows={rows}
         placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
+        maxLength={maxLength}
+        onChange={(e) => onChange(maxLength != null ? e.target.value.slice(0, maxLength) : e.target.value)}
         className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
       />
     </label>

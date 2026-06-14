@@ -253,10 +253,17 @@ insert into estado (descripcion) values
   ('Observada')
 on conflict (descripcion) do nothing;
 
+-- niveles de servidor_publico (la lógica de permisos usa estos nombres)
 insert into roles (descripcion) values
-  ('Administrador'),
-  ('Instructor')
+  ('Super Administrador'),
+  ('Encargado de Comisaría'),
+  ('Policía'),
+  ('Fiscal')
 on conflict (descripcion) do nothing;
+
+-- vincular un oficial a su comisaría (super_admin y fiscal quedan en null)
+alter table servidor_publico add column if not exists comisaria_id uuid references comisaria(id);
+create index if not exists idx_sp_comisaria on servidor_publico(comisaria_id);
 
 -- comisaría + oficinas de ejemplo (para el ruteo y la consulta pública)
 insert into comisaria (descripcion, departamento, provincia, distrito, direccion)

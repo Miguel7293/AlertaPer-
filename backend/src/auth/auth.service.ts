@@ -1,16 +1,18 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
-import { Denunciante } from '@prisma/client';
+import { Denunciante, ServidorPublico } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { audit } from '../common/audit.util';
-import { RegisterDto } from './dto';
+import { ROLES, ROL_DESCRIPCION, SLUG_POR_DESCRIPCION } from '../store/roles';
+import { CrearOficialDto, RegisterDto } from './dto';
 import { EmailService } from './email.service';
 
 // NOTE: bcryptjs is used for zero-native-build install reliability on Windows.
@@ -65,7 +67,7 @@ export class AuthService {
         apellidoMaterno: dto.apellidoMaterno,
         fechaNacimiento: new Date(dto.fechaNacimiento),
         fechaEmisionDni: dto.fechaEmisionDni ? new Date(dto.fechaEmisionDni) : null,
-        telefono: dto.telefono ?? null,
+        telefono: dto.telefono || null,
         estadoIdentidad: 'partial',
         contrasenaHash: await bcrypt.hash(dto.contrasena, 10),
       },
@@ -199,10 +201,20 @@ export class AuthService {
     if (!(await bcrypt.compare(refreshToken, session.refreshTokenHash))) {
       throw new UnauthorizedException('Token de refresco inválido');
     }
-    const d = await this.prisma.denunciante.findUnique({ where: { id: payload.sub } });
-    if (!d) throw new UnauthorizedException('Usuario no encontrado');
 
     await this.prisma.session.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
+
+    // tipo-aware: ciudadano u oficial viven en tablas distintas
+    if (session.tipoUsuario === 'servidor_publico') {
+      const sp = await this.prisma.servidorPublico.findUnique({ where: { id: payload.sub } });
+      if (!sp) throw new UnauthorizedException('Usuario no encontrado');
+      const pub = await this.publicServidor(sp);
+      const tokens = await this.issueTokens(sp.id, pub.rol ?? 'servidor_publico', 'servidor_publico');
+      return { ...tokens, user: pub };
+    }
+
+    const d = await this.prisma.denunciante.findUnique({ where: { id: payload.sub } });
+    if (!d) throw new UnauthorizedException('Usuario no encontrado');
     const tokens = await this.issueTokens(d.id, 'denunciante', 'denunciante');
     return { ...tokens, user: await this.publicUser(d) };
   }
@@ -227,5 +239,124 @@ export class AuthService {
     const d = await this.prisma.denunciante.findUnique({ where: { id: usuarioId } });
     if (!d) throw new UnauthorizedException();
     return this.publicUser(d);
+  }
+
+  // ---------------- SERVIDOR PÚBLICO (oficiales) ----------------
+
+  async publicServidor(sp: ServidorPublico) {
+    const rolRow = sp.role ? await this.prisma.rol.findUnique({ where: { id: sp.role } }) : null;
+    const rolNombre = rolRow?.descripcion ?? null;
+    const rol = rolNombre ? SLUG_POR_DESCRIPCION[rolNombre] ?? rolNombre : null;
+    const comisaria = sp.comisariaId
+      ? await this.prisma.comisaria.findUnique({ where: { id: sp.comisariaId } })
+      : null;
+    return {
+      id: sp.id,
+      tipo: 'servidor_publico' as const,
+      usuario: sp.usuario,
+      dni: sp.dni,
+      correoElectronico: sp.correoElectronico,
+      primerNombre: sp.primerNombre,
+      apellidoPaterno: sp.apellidoPaterno,
+      apellidoMaterno: sp.apellidoMaterno,
+      telefono: sp.telefono,
+      rol, // slug: super_admin | encargado_comisaria | policia | fiscal
+      rolNombre, // nombre legible
+      comisariaId: sp.comisariaId,
+      comisaria: comisaria?.descripcion ?? null,
+    };
+  }
+
+  async loginOficial(usuario: string, contrasena: string, ctx: { ua?: string; ip?: string }) {
+    const sp = await this.prisma.servidorPublico.findFirst({
+      where: { OR: [{ usuario }, { correoElectronico: usuario }, { dni: usuario }] },
+    });
+    if (!sp) throw new UnauthorizedException('Credenciales inválidas');
+    if (!(await bcrypt.compare(contrasena, sp.contrasenaHash))) {
+      audit(sp.id, 'auth.login_oficial_failed', 'servidor_publico', sp.id);
+      throw new UnauthorizedException('Credenciales inválidas');
+    }
+    const pub = await this.publicServidor(sp);
+    audit(sp.id, 'auth.login_oficial', 'servidor_publico', sp.id, { rol: pub.rol });
+    const tokens = await this.issueTokens(sp.id, pub.rol ?? 'servidor_publico', 'servidor_publico', ctx);
+    return { ...tokens, user: pub };
+  }
+
+  async meOficial(usuarioId: string) {
+    const sp = await this.prisma.servidorPublico.findUnique({ where: { id: usuarioId } });
+    if (!sp) throw new UnauthorizedException();
+    return this.publicServidor(sp);
+  }
+
+  private async rolIdPorSlug(slug: string): Promise<string | null> {
+    const descripcion = (ROL_DESCRIPCION as Record<string, string>)[slug];
+    if (!descripcion) return null;
+    const r = await this.prisma.rol.findFirst({ where: { descripcion } });
+    return r?.id ?? null;
+  }
+
+  // Crear cuentas de oficiales (solo super_admin y encargado_comisaria).
+  async crearOficial(creador: { id: string; role: string }, dto: CrearOficialDto) {
+    let rolSlug: string;
+    let comisariaId: string | null;
+
+    if (creador.role === ROLES.SUPER_ADMIN) {
+      rolSlug = dto.rol ?? ROLES.POLICIA;
+      comisariaId = dto.comisariaId ?? null;
+      if ((rolSlug === ROLES.POLICIA || rolSlug === ROLES.ENCARGADO_COMISARIA) && !comisariaId) {
+        throw new BadRequestException('Selecciona una comisaría para este rol');
+      }
+      if (rolSlug === ROLES.FISCAL) comisariaId = null;
+    } else if (creador.role === ROLES.ENCARGADO_COMISARIA) {
+      // el encargado solo crea policías en SU comisaría
+      const creadorSp = await this.prisma.servidorPublico.findUnique({ where: { id: creador.id } });
+      if (!creadorSp?.comisariaId) throw new BadRequestException('Tu cuenta no tiene comisaría asignada');
+      rolSlug = ROLES.POLICIA;
+      comisariaId = creadorSp.comisariaId;
+    } else {
+      throw new ForbiddenException('No autorizado');
+    }
+
+    const exists = await this.prisma.servidorPublico.findFirst({
+      where: { OR: [{ usuario: dto.usuario }, { correoElectronico: dto.correoElectronico }, { dni: dto.dni }] },
+    });
+    if (exists) throw new ConflictException('Ya existe un oficial con ese usuario, correo o DNI');
+
+    const sp = await this.prisma.servidorPublico.create({
+      data: {
+        usuario: dto.usuario,
+        correoElectronico: dto.correoElectronico,
+        dni: dto.dni,
+        primerNombre: dto.primerNombre,
+        apellidoPaterno: dto.apellidoPaterno,
+        apellidoMaterno: dto.apellidoMaterno,
+        contrasenaHash: await bcrypt.hash(dto.contrasena, 10),
+        role: await this.rolIdPorSlug(rolSlug),
+        comisariaId,
+      },
+    });
+    audit(creador.id, 'oficial.crear', 'servidor_publico', sp.id, { rol: rolSlug, comisariaId });
+    return this.publicServidor(sp);
+  }
+
+  async listarOficiales(solicitante: { id: string; role: string }) {
+    let sps;
+    if (solicitante.role === ROLES.SUPER_ADMIN) {
+      sps = await this.prisma.servidorPublico.findMany({ orderBy: { creadoEn: 'desc' } });
+    } else if (solicitante.role === ROLES.ENCARGADO_COMISARIA) {
+      const sp = await this.prisma.servidorPublico.findUnique({ where: { id: solicitante.id } });
+      sps = await this.prisma.servidorPublico.findMany({
+        where: { comisariaId: sp?.comisariaId ?? '' },
+        orderBy: { creadoEn: 'desc' },
+      });
+    } else {
+      throw new ForbiddenException('No autorizado');
+    }
+    return Promise.all(sps.map((s) => this.publicServidor(s)));
+  }
+
+  async listarComisarias() {
+    const cs = await this.prisma.comisaria.findMany({ orderBy: { descripcion: 'asc' } });
+    return cs.map((c) => ({ id: c.id, descripcion: c.descripcion, distrito: c.distrito }));
   }
 }
