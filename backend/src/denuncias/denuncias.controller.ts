@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Res, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
 import { DenunciasService } from './denuncias.service';
 import { JwtAuthGuard, AuthUser } from '../common/jwt-auth.guard';
 import { CurrentUser } from '../common/current-user.decorator';
@@ -62,7 +63,10 @@ export class DenunciasController {
   }
 
   @Get(':id/constancia')
-  constancia(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.denuncias.constancia(user.id, id);
+  async constancia(@CurrentUser() user: AuthUser, @Param('id') id: string, @Res() res: Response) {
+    const pdf = await this.denuncias.constanciaPdf(user.id, id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${pdf.fileName}"`);
+    res.send(pdf.buffer);
   }
 }

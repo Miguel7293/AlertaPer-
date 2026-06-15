@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Denuncia } from '@prisma/client';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { PrismaService } from '../prisma/prisma.service';
 import { ESTADOS } from '../store/estados';
 import { audit } from '../common/audit.util';
@@ -293,6 +294,136 @@ export class DenunciasService {
       enviadoEn: d.enviadoEn,
       emitidoEn: Date.now(),
       nota: 'Constancia provisional generada por DenunciaPE (MVP). No reemplaza el documento oficial de la PNP.',
+    };
+  }
+
+  async constanciaPdf(usuarioId: string, id: string) {
+    const d = await this.propia(usuarioId, id);
+    if (!d.codigoSeguimiento) throw new BadRequestException('La denuncia aÃºn no fue enviada');
+
+    const [estado, comisaria, objetos, sospechosos, testigos] = await Promise.all([
+      this.estadoDescripcion(d.estadoId),
+      d.comisariaId ? this.prisma.comisaria.findUnique({ where: { id: d.comisariaId } }) : null,
+      this.prisma.objetoRobado.findMany({ where: { denunciaId: id } }),
+      this.prisma.sospechoso.findMany({ where: { denuncia: id } }),
+      this.prisma.testigo.findMany({ where: { denuncia: id } }),
+    ]);
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://127.0.0.1:5173').replace(/\/$/, '');
+    const seguimientoUrl = `${frontendUrl}/seguimiento?codigo=${encodeURIComponent(d.codigoSeguimiento)}`;
+
+    const pdf = await PDFDocument.create();
+    const page = pdf.addPage([595.28, 841.89]); // A4
+    const regular = await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    const brand = rgb(0.78, 0.1, 0.1);
+    const slate = rgb(0.08, 0.13, 0.22);
+    const muted = rgb(0.38, 0.45, 0.56);
+    const light = rgb(0.95, 0.97, 0.99);
+    let y = 792;
+
+    const draw = (text: string, x: number, size = 10, font = regular, color = slate) => {
+      page.drawText(text, { x, y, size, font, color });
+      y -= size + 8;
+    };
+    const drawLine = () => {
+      page.drawLine({ start: { x: 42, y }, end: { x: 553, y }, thickness: 1, color: rgb(0.88, 0.9, 0.94) });
+      y -= 18;
+    };
+    const wrap = (text: string, max = 88) => {
+      const words = String(text ?? '').replace(/\s+/g, ' ').trim().split(' ');
+      const lines: string[] = [];
+      let line = '';
+      for (const word of words) {
+        const next = line ? `${line} ${word}` : word;
+        if (next.length > max) {
+          if (line) lines.push(line);
+          line = word;
+        } else {
+          line = next;
+        }
+      }
+      if (line) lines.push(line);
+      return lines.length ? lines : ['-'];
+    };
+    const section = (title: string) => {
+      y -= 4;
+      page.drawText(title, { x: 42, y, size: 13, font: bold, color: brand });
+      y -= 18;
+    };
+    const kv = (label: string, value: string | null | undefined) => {
+      page.drawText(label, { x: 42, y, size: 9, font: bold, color: muted });
+      page.drawText(value || '-', { x: 180, y, size: 10, font: regular, color: slate });
+      y -= 18;
+    };
+
+    page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(1, 1, 1) });
+    page.drawRectangle({ x: 0, y: 803, width: 595.28, height: 39, color: brand });
+    page.drawText('DenunciaPE', { x: 42, y: 816, size: 16, font: bold, color: rgb(1, 1, 1) });
+    page.drawText('Constancia provisional de denuncia digital', { x: 42, y: 770, size: 20, font: bold, color: slate });
+    page.drawText('Documento generado despues del registro de la denuncia en el sistema.', { x: 42, y: 748, size: 10, font: regular, color: muted });
+    page.drawRectangle({ x: 42, y: 692, width: 511, height: 38, color: light, borderColor: rgb(0.88, 0.9, 0.94), borderWidth: 1 });
+    page.drawText('Codigo de seguimiento', { x: 58, y: 714, size: 9, font: bold, color: muted });
+    page.drawText(d.codigoSeguimiento, { x: 58, y: 698, size: 14, font: bold, color: brand });
+    y = 664;
+
+    section('Datos principales');
+    kv('Tipo', d.tipo ?? null);
+    kv('Estado', estado);
+    kv('Fecha del hecho', d.hora?.toLocaleString('es-PE') ?? null);
+    kv('Ubicacion', [d.departamento, d.provincia, d.distrito].filter(Boolean).join(', '));
+    kv('Referencia', d.referenciaUbicacion);
+    kv('Comisaria', comisaria?.descripcion ?? null);
+    kv('Enviado en', d.enviadoEn?.toLocaleString('es-PE') ?? null);
+    drawLine();
+
+    section('Objetos sustraidos');
+    if (objetos.length) {
+      for (const [index, objeto] of objetos.entries()) {
+        draw(`${index + 1}. ${objeto.nombre} - ${objeto.marcaModelo ?? 'Sin caracteristica'} - S/ ${objeto.valorAproximado ?? '-'}`, 52, 10);
+      }
+    } else {
+      draw('Sin objetos registrados.', 52, 10);
+    }
+    drawLine();
+
+    section('Sospechosos y testigos');
+    draw(`Sospechosos observados: ${d.observoSospechosos ? 'Si' : 'No'}`, 52, 10);
+    for (const sospechoso of sospechosos) {
+      for (const line of wrap(`${sospechoso.descripcionPersonal ?? ''} ${sospechoso.descripcionHuida ?? ''}`, 92)) draw(line, 62, 9);
+    }
+    draw(`Testigos: ${d.huboTestigos ? 'Si' : 'No'}`, 52, 10);
+    for (const testigo of testigos) {
+      draw(`${testigo.nombre} (${testigo.relacion ?? 'sin relacion'}) - ${testigo.telefono ?? 'sin telefono'}`, 62, 9);
+    }
+    drawLine();
+
+    section('Relato');
+    for (const line of wrap(d.narrativa ?? '', 96)) draw(line, 52, 9);
+    y -= 2;
+    page.drawText('Enlace de seguimiento', { x: 52, y, size: 9, font: bold, color: muted });
+    y -= 14;
+    for (const line of wrap(seguimientoUrl, 92)) draw(line, 52, 9, regular, brand);
+
+    y = 64;
+    page.drawText('Nota: constancia provisional generada por DenunciaPE (MVP). No reemplaza el documento oficial de la PNP.', {
+      x: 42,
+      y,
+      size: 8,
+      font: regular,
+      color: muted,
+    });
+    page.drawText(`Emitido: ${new Date().toLocaleString('es-PE')}`, {
+      x: 42,
+      y: 48,
+      size: 8,
+      font: regular,
+      color: muted,
+    });
+
+    const bytes = await pdf.save();
+    return {
+      fileName: `${d.codigoSeguimiento}-constancia.pdf`,
+      buffer: Buffer.from(bytes),
     };
   }
 

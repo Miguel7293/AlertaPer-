@@ -168,15 +168,26 @@ export function Alert({ kind = 'info', children }: { kind?: 'info' | 'error' | '
   return <div className={`rounded-xl border px-3 py-2.5 text-sm ${styles}`}>{children}</div>;
 }
 
-export function Stepper({ steps, current }: { steps: string[]; current: number }) {
+export function Stepper({ steps, current, showLabels = false }: { steps: string[]; current: number; showLabels?: boolean }) {
   return (
-    <div className="mb-5 flex items-center gap-1.5">
-      {steps.map((_, i) => (
-        <span
-          key={i}
-          className={`h-1.5 flex-1 rounded-full ${i <= current ? 'bg-brand-600' : 'bg-slate-200'}`}
-        />
-      ))}
+    <div className="mb-5">
+      <div className="flex items-center gap-1.5">
+        {steps.map((_, i) => (
+          <span
+            key={i}
+            className={`h-1.5 flex-1 rounded-full ${i <= current ? 'bg-brand-600' : 'bg-slate-200'}`}
+          />
+        ))}
+      </div>
+      {showLabels && (
+        <div className="mt-2 grid gap-1 text-[11px] font-medium text-slate-400" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+          {steps.map((step, i) => (
+            <span key={step} className={`truncate ${i === current ? 'text-brand-700' : i < current ? 'text-slate-500' : ''}`}>
+              {step}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
