@@ -810,7 +810,7 @@ export default function NewComplaint() {
               </dl>
               <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 text-sm text-slate-600">
                 <input type="checkbox" checked={consentimiento} onChange={(event) => setConsentimiento(event.target.checked)} className="mt-0.5 h-4 w-4 accent-brand-600" />
-                <span>Declaro que la información es verdadera y autorizo su tratamiento conforme a la Ley 29733.</span>
+                <span>Declaro que la información es verdadera y autorizo su tratamiento conforme a la <a href="https://diariooficial.elperuano.pe/Normas/obtenerDocumento?idNorma=23">Ley 29733.</a></span>
               </label>
               <WizardActions busy={busy} onBack={back} onContinue={enviar} continueLabel="Enviar denuncia" />
             </Card>
