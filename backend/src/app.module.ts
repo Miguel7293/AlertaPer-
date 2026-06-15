@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { VerificacionModule } from './verificacion/verificacion.module';
 import { DenunciasModule } from './denuncias/denuncias.module';
 import { SeedService } from './seed.service';
+import { UbicacionModule } from './ubicacion/ubicacion.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { SeedService } from './seed.service';
     AuthModule,
     VerificacionModule,
     DenunciasModule,
+    UbicacionModule,
   ],
   providers: [SeedService],
 })

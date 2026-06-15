@@ -664,12 +664,41 @@ export default function NewComplaint() {
                   departamento={departamento}
                   provincia={provincia}
                   distrito={distrito}
-                  onDepartamento={(value) => { setDepartamento(value); setProvincia(''); setDistrito(''); }}
-                  onProvincia={(value) => { setProvincia(value); setDistrito(''); }}
-                  onDistrito={setDistrito}
+                  onDepartamento={(value) => {
+                    setDepartamento(value);
+                    setProvincia('');
+                    setDistrito('');
+                    setGeoLatitud(null);
+                    setGeoLongitud(null);
+                    setReferencia('');
+                  }}
+                  onProvincia={(value) => {
+                    setProvincia(value);
+                    setDistrito('');
+                    setGeoLatitud(null);
+                    setGeoLongitud(null);
+                    setReferencia('');
+                  }}
+                  onDistrito={(value) => {
+                    setDistrito(value);
+                    setGeoLatitud(null);
+                    setGeoLongitud(null);
+                    setReferencia('');
+                  }}
+                />
+                <MapSelector
+                  departamento={departamento}
+                  provincia={provincia}
+                  distrito={distrito}
+                  onLocationSelect={(lat, lng, referencia) => {
+                    setGeoLatitud(lat);
+                    setGeoLongitud(lng);
+                    if (referencia) setReferencia(referencia);
+                  }}
+                  initialLat={geoLatitud ?? undefined}
+                  initialLng={geoLongitud ?? undefined}
                 />
                 <Field label="Referencia del lugar" value={referenciaUbicacion} onChange={setReferencia} placeholder="Av., cruce o punto de referencia" maxLength={200} />
-                <MapSelector onLocationSelect={(lat, lng) => { setGeoLatitud(lat); setGeoLongitud(lng); }} initialLat={geoLatitud || undefined} initialLng={geoLongitud || undefined} />
                 <WizardActions busy={busy} onBack={back} onContinue={continueStep} />
               </div>
             </Card>
