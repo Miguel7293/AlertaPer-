@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Alert, Button, EstadoPill, Field, Logo } from '../components/ui';
 import { api, setAccessToken } from '../api/client';
 
-type Section = 'resumen' | 'denuncias' | 'mis-denuncias' | 'cuentas';
+type Section = 'resumen' | 'comisarias' | 'denuncias' | 'mis-denuncias' | 'cuentas';
 
 type Oficial = {
   id: string;
@@ -63,6 +63,27 @@ type Resumen = {
   recientes: DenunciaResumen[];
 };
 
+type Comisaria = {
+  id: string;
+  descripcion: string;
+  departamento: string | null;
+  provincia: string | null;
+  distrito: string | null;
+  direccion: string | null;
+  ubicacion: string | null;
+  encargado: string | null;
+  metricas: {
+    denuncias: number;
+    recibidas: number;
+    investigacion: number;
+    personal: number;
+  };
+};
+
+type ComisariaDetalle = Comisaria & {
+  denuncias: DenunciaResumen[];
+};
+
 const EMPTY = {
   usuario: '',
   primerNombre: '',
@@ -73,6 +94,15 @@ const EMPTY = {
   contrasena: '',
   rol: 'policia',
   comisariaId: '',
+};
+
+const EMPTY_COMISARIA = {
+  descripcion: '',
+  departamento: '',
+  provincia: '',
+  distrito: '',
+  direccion: '',
+  ubicacion: '',
 };
 
 const ALCANCE: Record<string, string> = {
@@ -102,6 +132,8 @@ function Icon({ name, className = 'h-5 w-5' }: { name: string; className?: strin
     close: <path d="m18 6-12 12M6 6l12 12" />,
     briefcase: <><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v2h4v-2" /></>,
     eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" /></>,
+    building: <><path d="M3 21h18M6 21V7l6-4 6 4v14M9 10h1M14 10h1M9 14h1M14 14h1M10 21v-3h4v3" /></>,
+    pin: <><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0z" /><circle cx="12" cy="10" r="2.5" /></>,
   };
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -186,7 +218,10 @@ export default function OficialPanel() {
   const [detalle, setDetalle] = useState<DenunciaDetalle | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [oficiales, setOficiales] = useState<Oficial[]>([]);
-  const [comisarias, setComisarias] = useState<any[]>([]);
+  const [comisarias, setComisarias] = useState<Comisaria[]>([]);
+  const [comisariaDetalle, setComisariaDetalle] = useState<ComisariaDetalle | null>(null);
+  const [showCreateComisaria, setShowCreateComisaria] = useState(false);
+  const [comisariaForm, setComisariaForm] = useState({ ...EMPTY_COMISARIA });
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [f, setF] = useState({ ...EMPTY });
@@ -197,6 +232,8 @@ export default function OficialPanel() {
   const canManage = me?.rol === 'super_admin' || me?.rol === 'encargado_comisaria';
   const isSuper = me?.rol === 'super_admin';
   const set = (key: keyof typeof f) => (value: string) => setF((current) => ({ ...current, [key]: value }));
+  const setComisariaField = (key: keyof typeof comisariaForm) => (value: string) =>
+    setComisariaForm((current) => ({ ...current, [key]: value }));
 
   async function loadDashboard() {
     const [data, bandeja] = await Promise.all([
@@ -226,7 +263,7 @@ export default function OficialPanel() {
     if (user.rol !== 'super_admin' && user.rol !== 'encargado_comisaria') return;
     const [usuarios, sedes] = await Promise.all([
       api.get<Oficial[]>('/auth/oficial/usuarios'),
-      user.rol === 'super_admin' ? api.get<any[]>('/auth/oficial/comisarias') : Promise.resolve([]),
+      user.rol === 'super_admin' ? api.get<Comisaria[]>('/auth/oficial/comisarias') : Promise.resolve([]),
     ]);
     setOficiales(usuarios);
     setComisarias(sedes);
@@ -324,9 +361,44 @@ export default function OficialPanel() {
     }
   }
 
+  async function abrirComisaria(id: string) {
+    setError('');
+    setBusy(true);
+    try {
+      setComisariaDetalle(await api.get<ComisariaDetalle>(`/auth/oficial/comisarias/${id}`));
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function crearComisaria() {
+    setError('');
+    setOk('');
+    if (Object.entries(comisariaForm).some(([key, value]) => key !== 'ubicacion' && !value.trim())) {
+      setError('Completa el nombre, departamento, provincia, distrito y dirección.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.post('/auth/oficial/comisarias', comisariaForm);
+      setOk('La comisaría fue registrada correctamente.');
+      setComisariaForm({ ...EMPTY_COMISARIA });
+      setShowCreateComisaria(false);
+      if (me) await loadManage(me);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function changeSection(next: Section) {
     setSection(next);
     setMobileMenu(false);
+    setQuery('');
+    if (next !== 'comisarias') setComisariaDetalle(null);
   }
 
   if (!me || !resumen) {
@@ -342,6 +414,7 @@ export default function OficialPanel() {
 
   const navItems = [
     { id: 'resumen' as const, label: 'Resumen', icon: 'dashboard' },
+    ...(isSuper ? [{ id: 'comisarias' as const, label: 'Comisarías', icon: 'building' }] : []),
     { id: 'denuncias' as const, label: me.rol === 'policia' ? 'Denuncias disponibles' : 'Denuncias', icon: 'file' },
     ...((me.rol === 'policia' || me.rol === 'fiscal')
       ? [{ id: 'mis-denuncias' as const, label: 'Denuncias a mi cargo', icon: 'briefcase' }]
@@ -449,6 +522,96 @@ export default function OficialPanel() {
                   {me.comisaria && <p className="mt-5 border-t border-white/10 pt-4 text-sm font-medium">{me.comisaria}</p>}
                 </div>
               </div>
+            </>
+          )}
+
+          {section === 'comisarias' && isSuper && (
+            <>
+              {!comisariaDetalle ? (
+                <>
+                  <SectionTitle
+                    title="Comisarías"
+                    description="Supervisa las sedes policiales, su personal y las denuncias asignadas."
+                    action={
+                      <Button full={false} onClick={() => setShowCreateComisaria((open) => !open)}>
+                        <Icon name={showCreateComisaria ? 'close' : 'plus'} className="h-4 w-4" />
+                        {showCreateComisaria ? 'Cerrar formulario' : 'Nueva comisaría'}
+                      </Button>
+                    }
+                  />
+                  {error && <div className="mb-4"><Alert kind="error">{error}</Alert></div>}
+                  {ok && <div className="mb-4"><Alert kind="success">{ok}</Alert></div>}
+
+                  {showCreateComisaria && (
+                    <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                      <div className="mb-5">
+                        <h2 className="font-bold text-slate-900">Registrar nueva comisaría</h2>
+                        <p className="mt-1 text-sm text-slate-500">La sede estará disponible inmediatamente para asignar personal y denuncias.</p>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <Field label="Nombre de la comisaría" value={comisariaForm.descripcion} onChange={setComisariaField('descripcion')} maxLength={120} placeholder="Ej. Comisaría de San Isidro" />
+                        <Field label="Departamento" value={comisariaForm.departamento} onChange={setComisariaField('departamento')} maxLength={80} placeholder="Lima" />
+                        <Field label="Provincia" value={comisariaForm.provincia} onChange={setComisariaField('provincia')} maxLength={80} placeholder="Lima" />
+                        <Field label="Distrito" value={comisariaForm.distrito} onChange={setComisariaField('distrito')} maxLength={80} placeholder="San Isidro" />
+                        <Field label="Dirección" value={comisariaForm.direccion} onChange={setComisariaField('direccion')} maxLength={180} placeholder="Av. o jirón y número" />
+                        <Field label="Referencia o ubicación" value={comisariaForm.ubicacion} onChange={setComisariaField('ubicacion')} maxLength={180} placeholder="Opcional" />
+                      </div>
+                      <div className="mt-5 flex justify-end">
+                        <Button full={false} onClick={crearComisaria} disabled={busy}>
+                          {busy ? 'Registrando...' : 'Registrar comisaría'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mb-5 max-w-md">
+                    <div className="relative">
+                      <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400"><Icon name="search" className="h-4 w-4" /></span>
+                      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nombre, distrito o provincia" className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                    {comisarias
+                      .filter((c) =>
+                        [c.descripcion, c.distrito, c.provincia, c.departamento]
+                          .filter(Boolean)
+                          .some((value) => String(value).toLowerCase().includes(query.toLowerCase())),
+                      )
+                      .map((comisaria) => (
+                        <ComisariaCard key={comisaria.id} comisaria={comisaria} onOpen={() => abrirComisaria(comisaria.id)} />
+                      ))}
+                  </div>
+                  {!comisarias.length && (
+                    <div className="rounded-2xl border border-slate-200 bg-white px-5 py-14 text-center text-sm text-slate-400">
+                      No hay comisarías registradas.
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button onClick={() => setComisariaDetalle(null)} className="mb-5 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    ← Volver a comisarías
+                  </button>
+                  <SectionTitle
+                    title={comisariaDetalle.descripcion}
+                    description={[comisariaDetalle.direccion, comisariaDetalle.distrito, comisariaDetalle.provincia].filter(Boolean).join(' · ')}
+                  />
+                  <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <MetricCard label="Denuncias asignadas" value={comisariaDetalle.metricas.denuncias} tone="red" note="Total dentro de esta sede" />
+                    <MetricCard label="Recibidas" value={comisariaDetalle.metricas.recibidas} tone="amber" note="Pendientes de atención" />
+                    <MetricCard label="En investigación" value={comisariaDetalle.metricas.investigacion} tone="blue" note="Casos activos" />
+                    <MetricCard label="Personal" value={comisariaDetalle.metricas.personal} tone="green" note="Cuentas vinculadas" />
+                  </div>
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="border-b border-slate-100 px-5 py-4">
+                      <h2 className="font-bold text-slate-900">Denuncias de la comisaría</h2>
+                      <p className="mt-1 text-xs text-slate-500">Abre cualquier expediente para revisar sus datos y trazabilidad.</p>
+                    </div>
+                    <DenunciasTable denuncias={comisariaDetalle.denuncias} onView={abrirDenuncia} />
+                  </div>
+                </>
+              )}
             </>
           )}
 
@@ -803,6 +966,43 @@ function DetailValue({ label, value, wide = false }: { label: string; value: str
 
 function EmptyText({ text }: { text: string }) {
   return <p className="text-sm text-slate-400">{text}</p>;
+}
+
+function ComisariaCard({ comisaria, onOpen }: { comisaria: Comisaria; onOpen: () => void }) {
+  return (
+    <article className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-200 hover:shadow-md">
+      <div className="flex items-start justify-between gap-4">
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700">
+          <Icon name="building" />
+        </div>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+          {comisaria.metricas.personal} integrantes
+        </span>
+      </div>
+      <h2 className="mt-5 text-lg font-bold text-slate-950">{comisaria.descripcion}</h2>
+      <p className="mt-2 flex items-start gap-2 text-sm leading-6 text-slate-500">
+        <Icon name="pin" className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>{[comisaria.direccion, comisaria.distrito, comisaria.provincia].filter(Boolean).join(', ') || 'Ubicación no registrada'}</span>
+      </p>
+      <div className="mt-5 grid grid-cols-3 gap-2 border-y border-slate-100 py-4 text-center">
+        <div>
+          <p className="text-xl font-bold text-slate-900">{comisaria.metricas.denuncias}</p>
+          <p className="text-[11px] text-slate-400">Denuncias</p>
+        </div>
+        <div>
+          <p className="text-xl font-bold text-amber-600">{comisaria.metricas.recibidas}</p>
+          <p className="text-[11px] text-slate-400">Recibidas</p>
+        </div>
+        <div>
+          <p className="text-xl font-bold text-blue-600">{comisaria.metricas.investigacion}</p>
+          <p className="text-[11px] text-slate-400">Investigación</p>
+        </div>
+      </div>
+      <button onClick={onOpen} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">
+        <Icon name="eye" className="h-4 w-4" /> Ver comisaría y denuncias
+      </button>
+    </article>
+  );
 }
 
 function PersonalTable({ oficiales }: { oficiales: Oficial[] }) {

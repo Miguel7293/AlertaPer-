@@ -14,7 +14,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { audit } from '../common/audit.util';
 import { ROLES, ROL_DESCRIPCION, SLUG_POR_DESCRIPCION } from '../store/roles';
 import { ESTADOS } from '../store/estados';
-import { CrearOficialDto, RegisterDto } from './dto';
+import { CrearComisariaDto, CrearOficialDto, RegisterDto } from './dto';
 import { EmailService } from './email.service';
 
 // NOTE: bcryptjs is used for zero-native-build install reliability on Windows.
@@ -358,8 +358,135 @@ export class AuthService {
   }
 
   async listarComisarias() {
-    const cs = await this.prisma.comisaria.findMany({ orderBy: { descripcion: 'asc' } });
-    return cs.map((c) => ({ id: c.id, descripcion: c.descripcion, distrito: c.distrito }));
+    const [comisarias, denuncias, servidores, estados] = await Promise.all([
+      this.prisma.comisaria.findMany({ orderBy: { descripcion: 'asc' } }),
+      this.prisma.denuncia.findMany({
+        where: { enviadoEn: { not: null } },
+        select: { comisariaId: true, estadoId: true },
+      }),
+      this.prisma.servidorPublico.findMany({
+        where: { comisariaId: { not: null } },
+        select: { comisariaId: true },
+      }),
+      this.prisma.estado.findMany(),
+    ]);
+    const estadoPorId = new Map(estados.map((e) => [e.id, e.descripcion]));
+
+    return comisarias.map((c) => {
+      const casos = denuncias.filter((d) => d.comisariaId === c.id);
+      return {
+        id: c.id,
+        descripcion: c.descripcion,
+        departamento: c.departamento,
+        provincia: c.provincia,
+        distrito: c.distrito,
+        direccion: c.direccion,
+        ubicacion: c.ubicacion,
+        encargado: c.encargado,
+        metricas: {
+          denuncias: casos.length,
+          recibidas: casos.filter((d) => d.estadoId && estadoPorId.get(d.estadoId) === ESTADOS.RECIBIDA).length,
+          investigacion: casos.filter((d) => d.estadoId && estadoPorId.get(d.estadoId) === ESTADOS.EN_INVESTIGACION).length,
+          personal: servidores.filter((s) => s.comisariaId === c.id).length,
+        },
+      };
+    });
+  }
+
+  async crearComisaria(
+    solicitante: { id: string; role: string },
+    dto: CrearComisariaDto,
+  ) {
+    if (solicitante.role !== ROLES.SUPER_ADMIN) {
+      throw new ForbiddenException('Solo el Super Administrador puede crear comisarías');
+    }
+    const descripcion = dto.descripcion.trim();
+    const distrito = dto.distrito.trim();
+    const existente = await this.prisma.comisaria.findFirst({
+      where: {
+        descripcion: { equals: descripcion, mode: 'insensitive' },
+        distrito: { equals: distrito, mode: 'insensitive' },
+      },
+    });
+    if (existente) {
+      throw new ConflictException('Ya existe una comisaría con ese nombre en el distrito');
+    }
+
+    const comisaria = await this.prisma.comisaria.create({
+      data: {
+        descripcion,
+        departamento: dto.departamento.trim(),
+        provincia: dto.provincia.trim(),
+        distrito,
+        direccion: dto.direccion.trim(),
+        ubicacion: dto.ubicacion?.trim() || null,
+      },
+    });
+    audit(solicitante.id, 'oficial.comisaria_crear', 'comisaria', comisaria.id, {
+      distrito: comisaria.distrito,
+    });
+    return {
+      ...comisaria,
+      metricas: { denuncias: 0, recibidas: 0, investigacion: 0, personal: 0 },
+    };
+  }
+
+  async detalleComisaria(comisariaId: string) {
+    const comisaria = await this.prisma.comisaria.findUnique({
+      where: { id: comisariaId },
+    });
+    if (!comisaria) throw new NotFoundException('Comisaría no encontrada');
+
+    const denuncias = await this.prisma.denuncia.findMany({
+      where: { comisariaId, enviadoEn: { not: null } },
+      orderBy: { actualizadoEn: 'desc' },
+      take: 100,
+    });
+    const contexto = await this.contextoDenuncias(denuncias.map((d) => d.id));
+    const personal = await this.prisma.servidorPublico.count({
+      where: { comisariaId },
+    });
+
+    const casos = denuncias.map((d) => {
+      const activos = contexto.movimientos.filter(
+        (m) => m.denuncia === d.id && !m.fechaSalida,
+      );
+      const actual = [...activos].reverse()[0];
+      const responsable = actual?.servidorPublico
+        ? contexto.servidorPorId.get(actual.servidorPublico)
+        : null;
+      return {
+        id: d.id,
+        codigoSeguimiento: d.codigoSeguimiento,
+        tipo: d.tipo,
+        estado: d.estadoId
+          ? contexto.estadoPorId.get(d.estadoId) ?? 'Sin estado'
+          : 'Borrador',
+        distrito: d.distrito,
+        comisaria: comisaria.descripcion,
+        oficinaActual: actual
+          ? contexto.oficinaPorId.get(actual.oficina) ?? null
+          : null,
+        responsable: responsable
+          ? [responsable.primerNombre, responsable.apellidoPaterno]
+              .filter(Boolean)
+              .join(' ')
+          : null,
+        enviadoEn: d.enviadoEn,
+        actualizadoEn: d.actualizadoEn,
+      };
+    });
+
+    return {
+      ...comisaria,
+      metricas: {
+        denuncias: casos.length,
+        recibidas: casos.filter((d) => d.estado === ESTADOS.RECIBIDA).length,
+        investigacion: casos.filter((d) => d.estado === ESTADOS.EN_INVESTIGACION).length,
+        personal,
+      },
+      denuncias: casos,
+    };
   }
 
   async resumenOficial(solicitante: { id: string; role: string }) {

@@ -70,3 +70,23 @@ export class CrearOficialDto {
   @IsOptional() @IsUUID()
   comisariaId?: string;
 }
+
+export class CrearComisariaDto {
+  @IsString() @MinLength(3) @MaxLength(120)
+  descripcion: string;
+
+  @IsString() @MinLength(2) @MaxLength(80)
+  departamento: string;
+
+  @IsString() @MinLength(2) @MaxLength(80)
+  provincia: string;
+
+  @IsString() @MinLength(2) @MaxLength(80)
+  distrito: string;
+
+  @IsString() @MinLength(5) @MaxLength(180)
+  direccion: string;
+
+  @IsOptional() @IsString() @MaxLength(180)
+  ubicacion?: string;
+}

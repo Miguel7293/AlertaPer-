@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { CrearOficialDto, LoginOficialDto } from './dto';
+import { CrearComisariaDto, CrearOficialDto, LoginOficialDto } from './dto';
 import { JwtAuthGuard, AuthUser } from '../common/jwt-auth.guard';
 import { RolesGuard } from '../common/roles.guard';
 import { Roles } from '../common/roles.decorator';
@@ -96,5 +96,19 @@ export class OficialController {
   @Get('comisarias')
   comisarias() {
     return this.auth.listarComisarias();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.SUPER_ADMIN)
+  @Get('comisarias/:id')
+  detalleComisaria(@Param('id') id: string) {
+    return this.auth.detalleComisaria(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.SUPER_ADMIN)
+  @Post('comisarias')
+  crearComisaria(@CurrentUser() user: AuthUser, @Body() dto: CrearComisariaDto) {
+    return this.auth.crearComisaria(user, dto);
   }
 }
