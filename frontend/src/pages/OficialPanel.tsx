@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Alert, Button, EstadoPill, Field, Logo } from '../components/ui';
 import { api, setAccessToken } from '../api/client';
 
-type Section = 'resumen' | 'denuncias' | 'cuentas';
+type Section = 'resumen' | 'denuncias' | 'mis-denuncias' | 'cuentas';
 
 type Oficial = {
   id: string;
@@ -26,7 +26,31 @@ type DenunciaResumen = {
   estado: string;
   distrito: string | null;
   comisaria: string | null;
+  oficinaActual?: string | null;
+  responsable?: string | null;
+  asignadaAMi?: boolean;
+  puedeAceptar?: boolean;
   enviadoEn: string | null;
+};
+
+type DenunciaDetalle = DenunciaResumen & {
+  hora: string | null;
+  departamento: string | null;
+  provincia: string | null;
+  referenciaUbicacion: string | null;
+  narrativa: string | null;
+  denunciante: {
+    dni: string;
+    nombre: string;
+    correoElectronico: string;
+    telefono: string | null;
+    estadoIdentidad: string | null;
+  } | null;
+  objetos: Array<{ id: string; nombre: string; marcaModelo: string | null; valorAproximado: string | number | null; descripcion: string | null }>;
+  sospechosos: Array<{ id: string; descripcionPersonal: string | null; descripcionHuida: string | null }>;
+  testigos: Array<{ id: string; nombre: string; relacion: string | null; correo: string | null; telefono: string | null }>;
+  evidencias: Array<{ id: string; urlArchivo: string; tipoArchivo: string | null; descripcion: string | null }>;
+  movimientos: Array<{ id: string; oficina: string | null; responsable: string | null; fechaIngreso: string; fechaSalida: string | null; comentario: string | null }>;
 };
 
 type Resumen = {
@@ -76,6 +100,8 @@ function Icon({ name, className = 'h-5 w-5' }: { name: string; className?: strin
     search: <><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></>,
     plus: <path d="M12 5v14M5 12h14" />,
     close: <path d="m18 6-12 12M6 6l12 12" />,
+    briefcase: <><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v2h4v-2" /></>,
+    eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" /></>,
   };
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -155,6 +181,10 @@ export default function OficialPanel() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [me, setMe] = useState<Oficial | null>(null);
   const [resumen, setResumen] = useState<Resumen | null>(null);
+  const [denuncias, setDenuncias] = useState<DenunciaResumen[]>([]);
+  const [misDenuncias, setMisDenuncias] = useState<DenunciaResumen[]>([]);
+  const [detalle, setDetalle] = useState<DenunciaDetalle | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [oficiales, setOficiales] = useState<Oficial[]>([]);
   const [comisarias, setComisarias] = useState<any[]>([]);
   const [query, setQuery] = useState('');
@@ -169,8 +199,27 @@ export default function OficialPanel() {
   const set = (key: keyof typeof f) => (value: string) => setF((current) => ({ ...current, [key]: value }));
 
   async function loadDashboard() {
-    const data = await api.get<Resumen>('/auth/oficial/resumen');
+    const [data, bandeja] = await Promise.all([
+      api.get<Resumen>('/auth/oficial/resumen'),
+      api.get<DenunciaResumen[]>('/auth/oficial/denuncias'),
+    ]);
     setResumen(data);
+    setDenuncias(bandeja);
+    if (me?.rol === 'policia' || me?.rol === 'fiscal') {
+      setMisDenuncias(await api.get<DenunciaResumen[]>('/auth/oficial/denuncias?vista=mias'));
+    }
+  }
+
+  async function loadDenuncias(user: Oficial) {
+    const requests: Promise<any>[] = [
+      api.get<DenunciaResumen[]>('/auth/oficial/denuncias'),
+    ];
+    if (user.rol === 'policia' || user.rol === 'fiscal') {
+      requests.push(api.get<DenunciaResumen[]>('/auth/oficial/denuncias?vista=mias'));
+    }
+    const [bandeja, propias = []] = await Promise.all(requests);
+    setDenuncias(bandeja);
+    setMisDenuncias(propias);
   }
 
   async function loadManage(user: Oficial) {
@@ -192,6 +241,7 @@ export default function OficialPanel() {
         setMe(user);
         setResumen(data);
         loadManage(user);
+        loadDenuncias(user);
       })
       .catch(() => nav('/oficial/login'));
   }, []);
@@ -244,6 +294,36 @@ export default function OficialPanel() {
     }
   }
 
+  async function abrirDenuncia(id: string) {
+    setError('');
+    setLoadingDetail(true);
+    try {
+      setDetalle(await api.get<DenunciaDetalle>(`/auth/oficial/denuncias/${id}`));
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoadingDetail(false);
+    }
+  }
+
+  async function aceptarDenuncia() {
+    if (!detalle || !me) return;
+    setBusy(true);
+    setError('');
+    try {
+      const response = await api.post<{ denuncia: DenunciaDetalle }>(
+        `/auth/oficial/denuncias/${detalle.id}/aceptar`,
+      );
+      setDetalle(response.denuncia);
+      setOk('La denuncia fue asignada a tu bandeja de trabajo.');
+      await Promise.all([loadDashboard(), loadDenuncias(me)]);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function changeSection(next: Section) {
     setSection(next);
     setMobileMenu(false);
@@ -253,7 +333,7 @@ export default function OficialPanel() {
     return (
       <div className="grid min-h-screen place-items-center bg-slate-50">
         <div className="text-center">
-          <img src="/IconoDenunciaPE.png" className="mx-auto h-14 w-auto" alt="" />
+          <img src="/IconoDenunciaPE-limpio.png" className="mx-auto h-14 w-auto" alt="" />
           <p className="mt-3 text-sm text-slate-500">Cargando panel institucional...</p>
         </div>
       </div>
@@ -262,7 +342,10 @@ export default function OficialPanel() {
 
   const navItems = [
     { id: 'resumen' as const, label: 'Resumen', icon: 'dashboard' },
-    { id: 'denuncias' as const, label: 'Denuncias', icon: 'file' },
+    { id: 'denuncias' as const, label: me.rol === 'policia' ? 'Denuncias disponibles' : 'Denuncias', icon: 'file' },
+    ...((me.rol === 'policia' || me.rol === 'fiscal')
+      ? [{ id: 'mis-denuncias' as const, label: 'Denuncias a mi cargo', icon: 'briefcase' }]
+      : []),
     ...(canManage ? [{ id: 'cuentas' as const, label: 'Personal', icon: 'users' }] : []),
   ];
 
@@ -351,7 +434,7 @@ export default function OficialPanel() {
                     </div>
                     <button onClick={() => setSection('denuncias')} className="text-sm font-semibold text-brand-700">Ver todas</button>
                   </div>
-                  <DenunciasTable denuncias={resumen.recientes.slice(0, 6)} compact />
+                  <DenunciasTable denuncias={denuncias.slice(0, 6)} compact onView={abrirDenuncia} />
                 </div>
                 <div className="rounded-2xl bg-slate-900 p-6 text-white shadow-sm">
                   <div className="mb-6 inline-flex rounded-xl bg-white/10 p-3"><Icon name="shield" /></div>
@@ -371,7 +454,13 @@ export default function OficialPanel() {
 
           {section === 'denuncias' && (
             <>
-              <SectionTitle title="Bandeja de denuncias" description="Consulta los casos disponibles según tu rol y ámbito institucional." />
+              <SectionTitle
+                title={me.rol === 'policia' ? 'Denuncias disponibles' : 'Bandeja de denuncias'}
+                description={me.rol === 'policia'
+                  ? 'Casos de tu comisaría que todavía no han sido aceptados por otro policía.'
+                  : 'Consulta los casos disponibles según tu rol y ámbito institucional.'}
+              />
+              {error && <div className="mb-4"><Alert kind="error">{error}</Alert></div>}
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="border-b border-slate-100 p-4 sm:p-5">
                   <div className="relative max-w-md">
@@ -380,10 +469,27 @@ export default function OficialPanel() {
                   </div>
                 </div>
                 <DenunciasTable
-                  denuncias={resumen.recientes.filter((d) =>
+                  denuncias={denuncias.filter((d) =>
                     [d.codigoSeguimiento, d.distrito, d.estado, d.comisaria].filter(Boolean).some((v) => String(v).toLowerCase().includes(query.toLowerCase())),
                   )}
+                  onView={abrirDenuncia}
                 />
+              </div>
+            </>
+          )}
+
+          {section === 'mis-denuncias' && (me.rol === 'policia' || me.rol === 'fiscal') && (
+            <>
+              <SectionTitle
+                title="Denuncias a mi cargo"
+                description={me.rol === 'policia'
+                  ? 'Expedientes que aceptaste y están bajo tu responsabilidad.'
+                  : 'Expedientes derivados formalmente a tu despacho.'}
+              />
+              {ok && <div className="mb-4"><Alert kind="success">{ok}</Alert></div>}
+              {error && <div className="mb-4"><Alert kind="error">{error}</Alert></div>}
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <DenunciasTable denuncias={misDenuncias} onView={abrirDenuncia} />
               </div>
             </>
           )}
@@ -460,11 +566,35 @@ export default function OficialPanel() {
           )}
         </main>
       </div>
+      {loadingDetail && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/30 p-4 backdrop-blur-sm">
+          <div className="rounded-2xl bg-white px-7 py-6 text-sm font-semibold text-slate-600 shadow-xl">
+            Cargando expediente...
+          </div>
+        </div>
+      )}
+      {detalle && (
+        <DenunciaModal
+          denuncia={detalle}
+          busy={busy}
+          error={error}
+          onClose={() => { setDetalle(null); setError(''); }}
+          onAccept={aceptarDenuncia}
+        />
+      )}
     </div>
   );
 }
 
-function DenunciasTable({ denuncias, compact = false }: { denuncias: DenunciaResumen[]; compact?: boolean }) {
+function DenunciasTable({
+  denuncias,
+  compact = false,
+  onView,
+}: {
+  denuncias: DenunciaResumen[];
+  compact?: boolean;
+  onView: (id: string) => void;
+}) {
   if (!denuncias.length) return <div className="px-5 py-12 text-center text-sm text-slate-400">No hay denuncias para mostrar.</div>;
   return (
     <>
@@ -477,6 +607,7 @@ function DenunciasTable({ denuncias, compact = false }: { denuncias: DenunciaRes
               <th className="px-5 py-3 font-semibold">Ubicación</th>
               <th className="px-5 py-3 font-semibold">Estado</th>
               {!compact && <th className="px-5 py-3 font-semibold">Fecha</th>}
+              <th className="px-5 py-3 text-right font-semibold">Acción</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -490,6 +621,11 @@ function DenunciasTable({ denuncias, compact = false }: { denuncias: DenunciaRes
                 </td>
                 <td className="px-5 py-4"><EstadoPill estado={d.estado} /></td>
                 {!compact && <td className="px-5 py-4 text-slate-500">{d.enviadoEn ? new Date(d.enviadoEn).toLocaleDateString('es-PE') : '-'}</td>}
+                <td className="px-5 py-4 text-right">
+                  <button onClick={() => onView(d.id)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700">
+                    <Icon name="eye" className="h-4 w-4" /> Ver expediente
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -506,11 +642,167 @@ function DenunciasTable({ denuncias, compact = false }: { denuncias: DenunciaRes
               <EstadoPill estado={d.estado} />
             </div>
             <p className="mt-3 text-xs text-slate-400">{d.comisaria ?? 'Sin comisaría asignada'}</p>
+            {d.responsable && <p className="mt-1 text-xs text-slate-500">Responsable: {d.responsable}</p>}
+            <button onClick={() => onView(d.id)} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700">
+              <Icon name="eye" className="h-4 w-4" /> Ver expediente
+            </button>
           </div>
         ))}
       </div>
     </>
   );
+}
+
+function DenunciaModal({
+  denuncia,
+  busy,
+  error,
+  onClose,
+  onAccept,
+}: {
+  denuncia: DenunciaDetalle;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onAccept: () => void;
+}) {
+  const fecha = (value: string | null) =>
+    value ? new Date(value).toLocaleString('es-PE') : 'No registrado';
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/40 p-0 backdrop-blur-sm sm:p-5" role="dialog" aria-modal="true">
+      <div className="mx-auto min-h-screen max-w-5xl bg-white shadow-2xl sm:min-h-0 sm:rounded-3xl">
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur sm:rounded-t-3xl sm:px-7">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-700">Expediente ciudadano</p>
+            <h2 className="mt-1 text-xl font-bold text-slate-950">{denuncia.codigoSeguimiento ?? 'Denuncia sin código'}</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <EstadoPill estado={denuncia.estado} />
+              <span className="text-xs capitalize text-slate-500">{denuncia.tipo ?? '-'} · {denuncia.distrito ?? 'Sin distrito'}</span>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-100" aria-label="Cerrar expediente">
+            <Icon name="close" />
+          </button>
+        </header>
+
+        <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.75fr)]">
+          <div className="space-y-5">
+            {error && <Alert kind="error">{error}</Alert>}
+            <DetailSection title="Datos del hecho">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <DetailValue label="Fecha y hora" value={fecha(denuncia.hora)} />
+                <DetailValue label="Comisaría" value={denuncia.comisaria ?? 'Sin asignar'} />
+                <DetailValue label="Ubicación" value={[denuncia.departamento, denuncia.provincia, denuncia.distrito].filter(Boolean).join(', ') || 'No registrada'} />
+                <DetailValue label="Referencia" value={denuncia.referenciaUbicacion ?? 'No registrada'} />
+              </div>
+              <DetailValue label="Relato del denunciante" value={denuncia.narrativa ?? 'No registrado'} wide />
+            </DetailSection>
+
+            <DetailSection title={`Objetos sustraídos (${denuncia.objetos.length})`}>
+              {denuncia.objetos.length ? denuncia.objetos.map((objeto) => (
+                <div key={objeto.id} className="rounded-xl bg-slate-50 p-4">
+                  <p className="font-semibold text-slate-900">{objeto.nombre}</p>
+                  <p className="mt-1 text-sm text-slate-600">{objeto.marcaModelo ?? 'Sin marca o característica'}</p>
+                  <p className="mt-1 text-xs text-slate-500">Valor aproximado: {objeto.valorAproximado != null ? `S/ ${objeto.valorAproximado}` : 'No indicado'}</p>
+                  {objeto.descripcion && <p className="mt-2 text-sm text-slate-600">{objeto.descripcion}</p>}
+                </div>
+              )) : <EmptyText text="No hay objetos registrados." />}
+            </DetailSection>
+
+            <div className="grid gap-5 md:grid-cols-2">
+              <DetailSection title={`Sospechosos (${denuncia.sospechosos.length})`}>
+                {denuncia.sospechosos.length ? denuncia.sospechosos.map((s) => (
+                  <div key={s.id} className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                    <p>{s.descripcionPersonal}</p>
+                    {s.descripcionHuida && <p className="mt-2"><b>Huida:</b> {s.descripcionHuida}</p>}
+                  </div>
+                )) : <EmptyText text="No se registraron sospechosos." />}
+              </DetailSection>
+              <DetailSection title={`Testigos (${denuncia.testigos.length})`}>
+                {denuncia.testigos.length ? denuncia.testigos.map((t) => (
+                  <div key={t.id} className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                    <p className="font-semibold text-slate-900">{t.nombre}</p>
+                    <p className="mt-1">{t.relacion ?? 'Relación no indicada'}</p>
+                    <p className="mt-1 text-xs">{t.telefono ?? t.correo ?? 'Sin contacto'}</p>
+                  </div>
+                )) : <EmptyText text="No se registraron testigos." />}
+              </DetailSection>
+            </div>
+
+            <DetailSection title={`Evidencias (${denuncia.evidencias.length})`}>
+              {denuncia.evidencias.length ? denuncia.evidencias.map((e) => (
+                <a key={e.id} href={e.urlArchivo} target="_blank" rel="noreferrer" className="block rounded-xl border border-slate-200 p-4 text-sm font-semibold text-brand-700 hover:bg-brand-50">
+                  {e.descripcion || e.tipoArchivo || 'Abrir evidencia adjunta'}
+                </a>
+              )) : <EmptyText text="No se adjuntaron evidencias." />}
+            </DetailSection>
+          </div>
+
+          <aside className="space-y-5">
+            <DetailSection title="Denunciante">
+              <DetailValue label="Nombre" value={denuncia.denunciante?.nombre ?? 'No disponible'} />
+              <DetailValue label="DNI" value={denuncia.denunciante?.dni ?? 'No disponible'} />
+              <DetailValue label="Correo" value={denuncia.denunciante?.correoElectronico ?? 'No disponible'} />
+              <DetailValue label="Teléfono" value={denuncia.denunciante?.telefono ?? 'No registrado'} />
+              <DetailValue label="Identidad" value={denuncia.denunciante?.estadoIdentidad ?? 'Sin estado'} />
+            </DetailSection>
+
+            <DetailSection title="Trazabilidad">
+              <div className="space-y-4">
+                {denuncia.movimientos.map((m) => (
+                  <div key={m.id} className="relative border-l-2 border-brand-100 pl-4">
+                    <span className="absolute -left-[5px] top-1 h-2 w-2 rounded-full bg-brand-600" />
+                    <p className="text-sm font-semibold text-slate-900">{m.oficina ?? 'Oficina sin nombre'}</p>
+                    <p className="mt-1 text-xs text-slate-500">{m.responsable ?? 'Sin responsable individual'}</p>
+                    <p className="mt-1 text-xs text-slate-400">{fecha(m.fechaIngreso)}</p>
+                    {m.comentario && <p className="mt-2 text-xs leading-5 text-slate-600">{m.comentario}</p>}
+                  </div>
+                ))}
+              </div>
+            </DetailSection>
+
+            {denuncia.puedeAceptar && (
+              <div className="rounded-2xl border border-brand-200 bg-brand-50 p-5">
+                <h3 className="font-bold text-slate-900">Aceptar responsabilidad</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  El caso aparecerá en “Denuncias a mi cargo” y quedará registrado en la trazabilidad.
+                </p>
+                <div className="mt-4">
+                  <Button onClick={onAccept} disabled={busy}>{busy ? 'Asignando...' : 'Aceptar denuncia'}</Button>
+                </div>
+              </div>
+            )}
+            {denuncia.asignadaAMi && (
+              <Alert kind="success">Esta denuncia se encuentra bajo tu responsabilidad.</Alert>
+            )}
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5">
+      <h3 className="mb-4 font-bold text-slate-900">{title}</h3>
+      <div className="space-y-3">{children}</div>
+    </section>
+  );
+}
+
+function DetailValue({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <div className={wide ? 'pt-2' : ''}>
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{value}</p>
+    </div>
+  );
+}
+
+function EmptyText({ text }: { text: string }) {
+  return <p className="text-sm text-slate-400">{text}</p>;
 }
 
 function PersonalTable({ oficiales }: { oficiales: Oficial[] }) {

@@ -6,7 +6,7 @@ import { useAuth } from '../auth/AuthContext';
 export function Logo({ className = 'h-8', light = false }: { light?: boolean; className?: string }) {
   return (
     <span className="flex items-center gap-2">
-      <img src="/IconoDenunciaPE.png" alt="DenunciaPE" className={`${className} w-auto select-none`} draggable={false} />
+      <img src="/IconoDenunciaPE-limpio.png" alt="DenunciaPE" className={`${className} w-auto select-none`} draggable={false} />
       <span className={`text-lg font-semibold tracking-tight ${light ? 'text-white' : 'text-brand-700'}`}>DenunciaPE</span>
     </span>
   );

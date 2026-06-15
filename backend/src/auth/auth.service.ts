@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -429,6 +430,281 @@ export class AuthService {
         enviadoEn: d.enviadoEn,
         actualizadoEn: d.actualizadoEn,
       })),
+    };
+  }
+
+  private async idsEnAlcance(
+    solicitante: { id: string; role: string },
+    denunciaId?: string,
+  ) {
+    const servidor = await this.prisma.servidorPublico.findUnique({
+      where: { id: solicitante.id },
+    });
+    if (!servidor) throw new UnauthorizedException('Servidor público no encontrado');
+
+    const where: any = { enviadoEn: { not: null } };
+    if (denunciaId) where.id = denunciaId;
+
+    if (
+      solicitante.role === ROLES.ENCARGADO_COMISARIA ||
+      solicitante.role === ROLES.POLICIA
+    ) {
+      if (!servidor.comisariaId) return { servidor, denuncias: [] };
+      where.comisariaId = servidor.comisariaId;
+    } else if (solicitante.role === ROLES.FISCAL) {
+      const asignaciones = await this.prisma.servidorDenuncia.findMany({
+        where: { servidorPublico: solicitante.id, fechaSalida: null },
+        select: { denuncia: true },
+      });
+      const ids = asignaciones.map((a) => a.denuncia);
+      where.id = denunciaId
+        ? ids.includes(denunciaId) ? denunciaId : { in: [] }
+        : { in: ids };
+    } else if (solicitante.role !== ROLES.SUPER_ADMIN) {
+      throw new ForbiddenException('No autorizado');
+    }
+
+    const denuncias = await this.prisma.denuncia.findMany({
+      where,
+      orderBy: { actualizadoEn: 'desc' },
+      take: 100,
+    });
+    return { servidor, denuncias };
+  }
+
+  private async contextoDenuncias(denunciaIds: string[]) {
+    const [estados, comisarias, oficinas, movimientos, servidores, roles] =
+      await Promise.all([
+        this.prisma.estado.findMany(),
+        this.prisma.comisaria.findMany(),
+        this.prisma.oficina.findMany(),
+        this.prisma.servidorDenuncia.findMany({
+          where: { denuncia: { in: denunciaIds } },
+          orderBy: { fechaIngreso: 'asc' },
+        }),
+        this.prisma.servidorPublico.findMany(),
+        this.prisma.rol.findMany(),
+      ]);
+
+    return {
+      estadoPorId: new Map(estados.map((e) => [e.id, e.descripcion])),
+      comisariaPorId: new Map(comisarias.map((c) => [c.id, c.descripcion])),
+      oficinaPorId: new Map(oficinas.map((o) => [o.id, o.descripcion])),
+      movimientos,
+      servidorPorId: new Map(servidores.map((s) => [s.id, s])),
+      rolPorId: new Map(roles.map((r) => [r.id, r.descripcion])),
+    };
+  }
+
+  async listarDenunciasOficial(
+    solicitante: { id: string; role: string },
+    vista: 'bandeja' | 'mias',
+  ) {
+    const { denuncias } = await this.idsEnAlcance(solicitante);
+    const contexto = await this.contextoDenuncias(denuncias.map((d) => d.id));
+
+    return denuncias
+      .map((d) => {
+        const activos = contexto.movimientos.filter(
+          (m) => m.denuncia === d.id && !m.fechaSalida,
+        );
+        const asignacionPolicial = activos.find((m) => {
+          if (!m.servidorPublico) return false;
+          const servidor = contexto.servidorPorId.get(m.servidorPublico);
+          return servidor?.role
+            ? contexto.rolPorId.get(servidor.role) === ROL_DESCRIPCION.policia
+            : false;
+        });
+        const asignadaAMi = activos.some(
+          (m) => m.servidorPublico === solicitante.id,
+        );
+        const responsable = asignacionPolicial?.servidorPublico
+          ? contexto.servidorPorId.get(asignacionPolicial.servidorPublico)
+          : null;
+        const actual = [...activos].reverse()[0];
+
+        return {
+          id: d.id,
+          codigoSeguimiento: d.codigoSeguimiento,
+          tipo: d.tipo,
+          estado: d.estadoId
+            ? contexto.estadoPorId.get(d.estadoId) ?? 'Sin estado'
+            : 'Borrador',
+          distrito: d.distrito,
+          comisaria: d.comisariaId
+            ? contexto.comisariaPorId.get(d.comisariaId) ?? null
+            : null,
+          oficinaActual: actual
+            ? contexto.oficinaPorId.get(actual.oficina) ?? null
+            : null,
+          responsable: responsable
+            ? [responsable.primerNombre, responsable.apellidoPaterno]
+                .filter(Boolean)
+                .join(' ')
+            : null,
+          asignadaAMi,
+          puedeAceptar:
+            solicitante.role === ROLES.POLICIA && !asignacionPolicial,
+          enviadoEn: d.enviadoEn,
+          actualizadoEn: d.actualizadoEn,
+        };
+      })
+      .filter((d) =>
+        vista === 'mias'
+          ? d.asignadaAMi
+          : solicitante.role !== ROLES.POLICIA || d.puedeAceptar,
+      );
+  }
+
+  async detalleDenunciaOficial(
+    solicitante: { id: string; role: string },
+    denunciaId: string,
+  ) {
+    const { denuncias } = await this.idsEnAlcance(solicitante, denunciaId);
+    const denuncia = denuncias[0];
+    if (!denuncia) throw new NotFoundException('Denuncia no encontrada dentro de tu ámbito');
+
+    const [contexto, denunciante, objetos, sospechosos, testigos, evidencias] =
+      await Promise.all([
+        this.contextoDenuncias([denuncia.id]),
+        this.prisma.denunciante.findUnique({ where: { id: denuncia.usuarioId } }),
+        this.prisma.objetoRobado.findMany({ where: { denunciaId } }),
+        this.prisma.sospechoso.findMany({ where: { denuncia: denunciaId } }),
+        this.prisma.testigo.findMany({ where: { denuncia: denunciaId } }),
+        this.prisma.evidencia.findMany({ where: { denunciaId } }),
+      ]);
+
+    const movimientos = contexto.movimientos.map((m) => {
+      const servidor = m.servidorPublico
+        ? contexto.servidorPorId.get(m.servidorPublico)
+        : null;
+      return {
+        id: m.id,
+        oficina: contexto.oficinaPorId.get(m.oficina) ?? null,
+        responsable: servidor
+          ? [servidor.primerNombre, servidor.apellidoPaterno]
+              .filter(Boolean)
+              .join(' ')
+          : null,
+        fechaIngreso: m.fechaIngreso,
+        fechaSalida: m.fechaSalida,
+        comentario: m.comentario,
+      };
+    });
+    const asignadaAMi = movimientos.some(
+      (m) => !m.fechaSalida &&
+        contexto.movimientos.find((row) => row.id === m.id)?.servidorPublico === solicitante.id,
+    );
+    const policiaAsignado = contexto.movimientos.find((m) => {
+      if (m.fechaSalida || !m.servidorPublico) return false;
+      const servidor = contexto.servidorPorId.get(m.servidorPublico);
+      return servidor?.role
+        ? contexto.rolPorId.get(servidor.role) === ROL_DESCRIPCION.policia
+        : false;
+    });
+
+    return {
+      ...denuncia,
+      estado: denuncia.estadoId
+        ? contexto.estadoPorId.get(denuncia.estadoId) ?? 'Sin estado'
+        : 'Borrador',
+      comisaria: denuncia.comisariaId
+        ? contexto.comisariaPorId.get(denuncia.comisariaId) ?? null
+        : null,
+      denunciante: denunciante
+        ? {
+            dni: denunciante.dni,
+            nombre: [
+              denunciante.primerNombre,
+              denunciante.apellidoPaterno,
+              denunciante.apellidoMaterno,
+            ].filter(Boolean).join(' '),
+            correoElectronico: denunciante.correoElectronico,
+            telefono: denunciante.telefono,
+            estadoIdentidad: denunciante.estadoIdentidad,
+          }
+        : null,
+      objetos,
+      sospechosos,
+      testigos,
+      evidencias,
+      movimientos,
+      asignadaAMi,
+      puedeAceptar:
+        solicitante.role === ROLES.POLICIA && !policiaAsignado,
+    };
+  }
+
+  async aceptarDenuncia(
+    solicitante: { id: string; role: string },
+    denunciaId: string,
+  ) {
+    const { servidor, denuncias } = await this.idsEnAlcance(solicitante, denunciaId);
+    const denuncia = denuncias[0];
+    if (!denuncia) throw new NotFoundException('Denuncia no encontrada dentro de tu comisaría');
+    if (solicitante.role !== ROLES.POLICIA) throw new ForbiddenException('Solo un policía puede aceptar denuncias');
+
+    const resultado = await this.prisma.$transaction(async (tx) => {
+      const activos = await tx.servidorDenuncia.findMany({
+        where: { denuncia: denunciaId, fechaSalida: null },
+      });
+      const policiaRole = await tx.rol.findFirst({
+        where: { descripcion: ROL_DESCRIPCION.policia },
+      });
+      const idsResponsables = activos
+        .map((a) => a.servidorPublico)
+        .filter((id): id is string => Boolean(id));
+      const responsables = idsResponsables.length
+        ? await tx.servidorPublico.findMany({
+            where: { id: { in: idsResponsables }, role: policiaRole?.id },
+          })
+        : [];
+      const asignado = responsables[0];
+      if (asignado && asignado.id !== solicitante.id) {
+        throw new ConflictException('La denuncia ya fue aceptada por otro policía');
+      }
+      if (asignado?.id === solicitante.id) return { yaAsignada: true };
+
+      const oficina =
+        (await tx.oficina.findFirst({
+          where: { descripcion: { contains: 'Investigación', mode: 'insensitive' } },
+        })) ??
+        (activos[0]
+          ? await tx.oficina.findUnique({ where: { id: activos[0].oficina } })
+          : null) ??
+        (await tx.oficina.findFirst());
+      if (!oficina) throw new BadRequestException('No existe una oficina configurada para asignar la denuncia');
+
+      await tx.servidorDenuncia.updateMany({
+        where: { denuncia: denunciaId, fechaSalida: null },
+        data: { fechaSalida: new Date() },
+      });
+      await tx.servidorDenuncia.create({
+        data: {
+          denuncia: denunciaId,
+          servidorPublico: servidor.id,
+          oficina: oficina.id,
+          comentario: 'Denuncia aceptada por el policía responsable',
+        },
+      });
+      const estado = await tx.estado.findFirst({
+        where: { descripcion: ESTADOS.ASIGNADA },
+      });
+      await tx.denuncia.update({
+        where: { id: denunciaId },
+        data: {
+          estadoId: estado?.id ?? denuncia.estadoId,
+          actualizadoEn: new Date(),
+        },
+      });
+      return { yaAsignada: false };
+    });
+
+    audit(solicitante.id, 'oficial.denuncia_aceptar', 'denuncia', denunciaId);
+    return {
+      ok: true,
+      yaAsignada: resultado.yaAsignada,
+      denuncia: await this.detalleDenunciaOficial(solicitante, denunciaId),
     };
   }
 }

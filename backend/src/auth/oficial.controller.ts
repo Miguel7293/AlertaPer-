@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -52,6 +52,27 @@ export class OficialController {
   @Get('resumen')
   resumen(@CurrentUser() user: AuthUser) {
     return this.auth.resumenOficial(user);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.SUPER_ADMIN, ROLES.ENCARGADO_COMISARIA, ROLES.POLICIA, ROLES.FISCAL)
+  @Get('denuncias')
+  denuncias(@CurrentUser() user: AuthUser, @Query('vista') vista?: string) {
+    return this.auth.listarDenunciasOficial(user, vista === 'mias' ? 'mias' : 'bandeja');
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.SUPER_ADMIN, ROLES.ENCARGADO_COMISARIA, ROLES.POLICIA, ROLES.FISCAL)
+  @Get('denuncias/:id')
+  detalleDenuncia(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.auth.detalleDenunciaOficial(user, id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.POLICIA)
+  @Post('denuncias/:id/aceptar')
+  aceptarDenuncia(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.auth.aceptarDenuncia(user, id);
   }
 
   // --- Gestión de cuentas (solo Super Admin y Encargado de Comisaría) ---
