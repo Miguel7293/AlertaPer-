@@ -1,4 +1,17 @@
-import { Body, Controller, Get, Param, Patch, Post, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Res,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { DenunciasService } from './denuncias.service';
 import { JwtAuthGuard, AuthUser } from '../common/jwt-auth.guard';
@@ -6,11 +19,12 @@ import { CurrentUser } from '../common/current-user.decorator';
 import {
   ActualizarDenunciaDto,
   EnviarDto,
-  EvidenciaDto,
   ObjetoDto,
   SospechosoDto,
   TestigoDto,
 } from './dto';
+
+const MAX_EVIDENCIA_BYTES = 30 * 1024 * 1024; // 30 MB
 
 @UseGuards(JwtAuthGuard)
 @Controller('denuncias')
@@ -53,8 +67,29 @@ export class DenunciasController {
   }
 
   @Post(':id/evidencias')
-  evidencia(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: EvidenciaDto) {
-    return this.denuncias.agregarEvidencia(user.id, id, dto);
+  @UseInterceptors(FileInterceptor('archivo', { limits: { fileSize: MAX_EVIDENCIA_BYTES } }))
+  evidencia(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @UploadedFile() archivo: any,
+    @Body('descripcion') descripcion?: string,
+  ) {
+    return this.denuncias.subirEvidencia(user.id, id, archivo, descripcion);
+  }
+
+  @Patch(':id/evidencias/:evidenciaId')
+  actualizarEvidencia(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('evidenciaId') evidenciaId: string,
+    @Body('descripcion') descripcion?: string,
+  ) {
+    return this.denuncias.actualizarEvidencia(user.id, id, evidenciaId, descripcion);
+  }
+
+  @Delete(':id/evidencias/:evidenciaId')
+  eliminarEvidencia(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('evidenciaId') evidenciaId: string) {
+    return this.denuncias.eliminarEvidencia(user.id, id, evidenciaId);
   }
 
   @Post(':id/enviar')

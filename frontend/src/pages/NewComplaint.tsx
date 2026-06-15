@@ -4,8 +4,11 @@ import { ComplaintAssistant } from '../components/ComplaintAssistant';
 import { Alert, Button, Card, Field, Page, Stepper, TextArea } from '../components/ui';
 import { API_URL, api, getAccessToken } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import ubigeoData from '../data/ubigeo.json';
 
-type Step = 'tipo' | 'lugar' | 'narrativa' | 'objetos' | 'sospechosos' | 'testigos' | 'review' | 'done';
+const UBIGEO = ubigeoData as Record<string, Record<string, string[]>>;
+
+type Step = 'tipo' | 'lugar' | 'narrativa' | 'objetos' | 'sospechosos' | 'testigos' | 'evidencias' | 'review' | 'done';
 type Answer = '' | 'si' | 'no';
 
 interface Objeto {
@@ -22,8 +25,16 @@ interface Testigo {
   telefono: string;
 }
 
-const ORDER: Step[] = ['tipo', 'lugar', 'narrativa', 'objetos', 'sospechosos', 'testigos', 'review', 'done'];
-const STEP_LABELS = ['Tipo', 'Lugar', 'Relato', 'Objetos', 'Sospechosos', 'Testigos', 'Revisar'];
+interface Evidencia {
+  id: string;
+  url: string;
+  tipoArchivo: string | null;
+  descripcion: string;
+  localPreview?: string;
+}
+
+const ORDER: Step[] = ['tipo', 'lugar', 'narrativa', 'objetos', 'sospechosos', 'testigos', 'evidencias', 'review', 'done'];
+const STEP_LABELS = ['Tipo', 'Lugar', 'Relato', 'Objetos', 'Sospechosos', 'Testigos', 'Evidencias', 'Revisar'];
 const RELACIONES = ['familia directa', 'familia indirecta', 'amigo y/o conocido', 'extraño'];
 
 const OBJETOS_FRECUENTES = [
@@ -154,6 +165,10 @@ const ASSISTANT: Record<Exclude<Step, 'done'>, { title: string; message: string 
     title: 'Los testigos pueden ayudar',
     message: 'Indica si alguien presenció el hecho. Si hubo testigos, registra un nombre y teléfono de contacto. Si no hubo, marca No y continúa.',
   },
+  evidencias: {
+    title: 'La evidencia fortalece tu caso',
+    message: 'Adjunta fotos o videos relacionados al hecho: del lugar, de los daños, capturas, recibos o cámaras. Es opcional, pero ayuda a la investigación. Máximo 30 MB por archivo.',
+  },
   review: {
     title: 'Haz una última revisión',
     message: 'Comprueba que fechas, lugar, relato y objetos sean correctos. Después acepta la declaración de veracidad para registrar la denuncia.',
@@ -181,6 +196,8 @@ export default function NewComplaint() {
   const [sospHuida, setSospHuida] = useState('');
   const [huboTestigos, setHuboTestigos] = useState<Answer>('');
   const [testigos, setTestigos] = useState<Testigo[]>([{ nombre: '', relacion: 'extraño', telefono: '' }]);
+  const [evidencias, setEvidencias] = useState<Evidencia[]>([]);
+  const [subiendo, setSubiendo] = useState(false);
   const [consentimiento, setConsentimiento] = useState(false);
   const [resultado, setResultado] = useState<any>(null);
   const [draftRestored, setDraftRestored] = useState(false);
@@ -207,8 +224,9 @@ export default function NewComplaint() {
     sospHuida,
     huboTestigos,
     testigos,
+    evidencias,
     consentimiento,
-  }), [step, reportId, tipo, hora, departamento, provincia, distrito, referenciaUbicacion, narrativa, objetos, observoSospechosos, sospPersonal, sospHuida, huboTestigos, testigos, consentimiento]);
+  }), [step, reportId, tipo, hora, departamento, provincia, distrito, referenciaUbicacion, narrativa, objetos, observoSospechosos, sospPersonal, sospHuida, huboTestigos, testigos, evidencias, consentimiento]);
 
   useEffect(() => {
     if (!draftKey || draftRestored) return;
@@ -233,6 +251,7 @@ export default function NewComplaint() {
         if (saved.sospHuida !== undefined) setSospHuida(saved.sospHuida);
         if (saved.huboTestigos !== undefined) setHuboTestigos(saved.huboTestigos);
         if (Array.isArray(saved.testigos) && saved.testigos.length) setTestigos(saved.testigos);
+        if (Array.isArray(saved.evidencias)) setEvidencias(saved.evidencias);
         if (saved.consentimiento !== undefined) setConsentimiento(Boolean(saved.consentimiento));
       } catch {
         localStorage.removeItem(draftKey);
@@ -330,6 +349,73 @@ export default function NewComplaint() {
     if (idx > 0) {
       setError('');
       setStep(ORDER[idx - 1]);
+    }
+  }
+
+  async function subirEvidencias(fileList: FileList | null) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    setError('');
+    setSubiendo(true);
+    try {
+      const id = await ensure();
+      for (const file of files) {
+        const esImagen = file.type.startsWith('image/');
+        const esVideo = file.type.startsWith('video/');
+        if (!esImagen && !esVideo) { setError('Solo se permiten fotos o videos.'); continue; }
+        if (file.size > 30 * 1024 * 1024) { setError(`"${file.name}" supera los 30 MB.`); continue; }
+        const fd = new FormData();
+        fd.append('archivo', file);
+        const res = await fetch(`${API_URL}/denuncias/${id}/evidencias`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${getAccessToken()}` },
+          credentials: 'include',
+          body: fd,
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          setError(body?.message || 'No se pudo subir el archivo.');
+          continue;
+        }
+        const ev = await res.json();
+        setEvidencias((prev) => [...prev, { id: ev.id, url: ev.urlArchivo, tipoArchivo: ev.tipoArchivo, descripcion: ev.descripcion ?? '', localPreview: URL.createObjectURL(file) }]);
+      }
+    } catch {
+      setError('No se pudo subir el archivo. Verifica tu conexión.');
+    } finally {
+      setSubiendo(false);
+    }
+  }
+
+  async function quitarEvidencia(evidenciaId: string) {
+    if (!reportId) return;
+    setEvidencias((prev) => prev.filter((item) => item.id !== evidenciaId));
+    try {
+      await fetch(`${API_URL}/denuncias/${reportId}/evidencias/${evidenciaId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getAccessToken()}` },
+        credentials: 'include',
+      });
+    } catch {
+      // se quitó de la lista; el borrado en servidor es best-effort
+    }
+  }
+
+  function cambiarDescripcionEvidencia(evidenciaId: string, descripcion: string) {
+    setEvidencias((prev) => prev.map((item) => item.id === evidenciaId ? { ...item, descripcion } : item));
+  }
+
+  async function guardarDescripcionEvidencia(evidenciaId: string, descripcion: string) {
+    if (!reportId) return;
+    try {
+      await fetch(`${API_URL}/denuncias/${reportId}/evidencias/${evidenciaId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAccessToken()}` },
+        credentials: 'include',
+        body: JSON.stringify({ descripcion }),
+      });
+    } catch {
+      // best-effort
     }
   }
 
@@ -564,9 +650,14 @@ export default function NewComplaint() {
               <h2 className="mb-4 text-lg font-bold text-slate-900">¿Cuándo y dónde?</h2>
               <div className="space-y-4">
                 <Field label="Fecha y hora del hecho" type="datetime-local" value={hora} onChange={setHora} />
-                <Field label="Departamento" value={departamento} onChange={setDepartamento} placeholder="Ej. Lima" maxLength={80} />
-                <Field label="Provincia" value={provincia} onChange={setProvincia} placeholder="Ej. Lima" maxLength={80} />
-                <Field label="Distrito" value={distrito} onChange={setDistrito} placeholder="Ej. Miraflores" hint="Determina la comisaría asignada" maxLength={80} />
+                <UbigeoPicker
+                  departamento={departamento}
+                  provincia={provincia}
+                  distrito={distrito}
+                  onDepartamento={(value) => { setDepartamento(value); setProvincia(''); setDistrito(''); }}
+                  onProvincia={(value) => { setProvincia(value); setDistrito(''); }}
+                  onDistrito={setDistrito}
+                />
                 <Field label="Referencia del lugar" value={referenciaUbicacion} onChange={setReferencia} placeholder="Av., cruce o punto de referencia" maxLength={200} />
                 <WizardActions busy={busy} onBack={back} onContinue={continueStep} />
               </div>
@@ -786,6 +877,65 @@ export default function NewComplaint() {
             </Card>
           )}
 
+          {step === 'evidencias' && (
+            <Card>
+              <h2 className="mb-1 text-lg font-bold text-slate-900">Agrega fotos o videos</h2>
+              <p className="mb-4 text-sm text-slate-500">Opcional. Adjunta imágenes o videos del hecho, daños, capturas o recibos. Máximo 30 MB por archivo.</p>
+              <div className="space-y-4">
+                <label className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-8 text-center transition ${subiendo ? 'border-brand-300 bg-brand-50' : 'border-slate-300 bg-slate-50 hover:border-brand-300 hover:bg-brand-50'}`}>
+                  <span className="grid h-12 w-12 place-items-center rounded-full bg-white text-brand-600 ring-1 ring-brand-100">
+                    {subiendo
+                      ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
+                      : <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" /></svg>}
+                  </span>
+                  <span className="text-sm font-semibold text-slate-800">{subiendo ? 'Subiendo archivos...' : 'Toca para subir fotos o videos'}</span>
+                  <span className="text-xs text-slate-500">Imagen o video · hasta 30 MB cada uno</span>
+                  <input type="file" accept="image/*,video/*" multiple className="hidden" disabled={subiendo} onChange={(event) => { subirEvidencias(event.target.files); event.currentTarget.value = ''; }} />
+                </label>
+
+                {evidencias.length > 0 ? (
+                  <div className="space-y-3">
+                    {evidencias.map((ev, index) => (
+                      <div key={ev.id} className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+                        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-slate-100">
+                          {ev.tipoArchivo?.startsWith('video') ? (
+                            <video src={ev.localPreview || ev.url} className="h-full w-full object-cover" muted playsInline />
+                          ) : (
+                            <img src={ev.localPreview || ev.url} alt={`Evidencia ${index + 1}`} className="h-full w-full object-cover" />
+                          )}
+                          <span className="absolute left-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-white">
+                            {ev.tipoArchivo?.startsWith('video') ? 'Video' : 'Foto'}
+                          </span>
+                        </div>
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-slate-500">Evidencia {index + 1} · descripción (opcional)</span>
+                            <button type="button" onClick={() => quitarEvidencia(ev.id)} className="shrink-0 text-xs font-semibold text-red-600 hover:underline">Quitar</button>
+                          </div>
+                          <input
+                            type="text"
+                            value={ev.descripcion}
+                            maxLength={500}
+                            onChange={(event) => cambiarDescripcionEvidencia(ev.id, event.target.value)}
+                            onBlur={(event) => guardarDescripcionEvidencia(ev.id, event.target.value)}
+                            placeholder="Ej. Foto del lugar, del daño o del sospechoso"
+                            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-700">
+                    Puedes continuar sin evidencias, pero adjuntarlas ayuda a la investigación.
+                  </div>
+                )}
+
+                <WizardActions busy={busy || subiendo} onBack={back} onContinue={continueStep} />
+              </div>
+            </Card>
+          )}
+
           {step === 'review' && (
             <Card>
               <h2 className="mb-4 text-lg font-bold text-slate-900">Revisa tu denuncia</h2>
@@ -807,6 +957,7 @@ export default function NewComplaint() {
                 <Row label="Objetos" value={objetos.map((objeto) => objeto.nombre).join(', ')} />
                 <Row label="Sospechosos" value={observoSospechosos === 'si' ? sospPersonal : 'No observados'} />
                 <Row label="Testigos" value={huboTestigos === 'si' ? testigos.map((testigo) => testigo.nombre).join(', ') : 'No hubo testigos'} />
+                <Row label="Evidencias" value={evidencias.length ? `${evidencias.length} archivo${evidencias.length === 1 ? '' : 's'} adjunto${evidencias.length === 1 ? '' : 's'}` : 'Sin evidencias'} />
               </dl>
               <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 text-sm text-slate-600">
                 <input type="checkbox" checked={consentimiento} onChange={(event) => setConsentimiento(event.target.checked)} className="mt-0.5 h-4 w-4 accent-brand-600" />
@@ -1128,5 +1279,87 @@ function ReviewMetric({ label, value }: { label: string; value: string }) {
       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
       <p className="mt-1 truncate text-sm font-bold capitalize text-slate-900">{value}</p>
     </div>
+  );
+}
+
+function SelectBox({
+  label,
+  value,
+  options,
+  placeholder,
+  disabled,
+  hint,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  placeholder: string;
+  disabled?: boolean;
+  hint?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-sm font-medium text-slate-700">{label}</span>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+      >
+        <option value="">{placeholder}</option>
+        {options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+      </select>
+      {hint && <span className="mt-1 block text-xs text-slate-400">{hint}</span>}
+    </label>
+  );
+}
+
+function UbigeoPicker({
+  departamento,
+  provincia,
+  distrito,
+  onDepartamento,
+  onProvincia,
+  onDistrito,
+}: {
+  departamento: string;
+  provincia: string;
+  distrito: string;
+  onDepartamento: (value: string) => void;
+  onProvincia: (value: string) => void;
+  onDistrito: (value: string) => void;
+}) {
+  const departamentos = Object.keys(UBIGEO);
+  const provincias = departamento ? Object.keys(UBIGEO[departamento] ?? {}) : [];
+  const distritos = departamento && provincia ? UBIGEO[departamento]?.[provincia] ?? [] : [];
+  return (
+    <>
+      <SelectBox
+        label="Departamento"
+        value={departamento}
+        options={departamentos}
+        placeholder="Selecciona un departamento"
+        onChange={onDepartamento}
+      />
+      <SelectBox
+        label="Provincia"
+        value={provincia}
+        options={provincias}
+        placeholder={departamento ? 'Selecciona una provincia' : 'Primero elige un departamento'}
+        disabled={!departamento}
+        onChange={onProvincia}
+      />
+      <SelectBox
+        label="Distrito"
+        value={distrito}
+        options={distritos}
+        placeholder={provincia ? 'Selecciona un distrito' : 'Primero elige una provincia'}
+        disabled={!provincia}
+        hint="Determina la comisaría asignada"
+        onChange={onDistrito}
+      />
+    </>
   );
 }

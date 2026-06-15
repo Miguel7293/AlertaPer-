@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { Denuncia } from '@prisma/client';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { ESTADOS } from '../store/estados';
 import { audit } from '../common/audit.util';
 import {
@@ -15,7 +16,10 @@ import {
 
 @Injectable()
 export class DenunciasService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   private async propia(usuarioId: string, id: string): Promise<Denuncia> {
     const d = await this.prisma.denuncia.findUnique({ where: { id } });
@@ -36,9 +40,18 @@ export class DenunciasService {
   }
 
   private async nextCodigo(): Promise<string> {
-    const count = await this.prisma.denuncia.count({ where: { codigoSeguimiento: { not: null } } });
     const year = new Date().getFullYear();
-    return `DEN-${year}-${String(1001 + count).padStart(7, '0')}`;
+    // Punto de partida por conteo, pero PROBAMOS hasta hallar uno libre
+    // (evita colisiones por el seed, borrados o envíos previos).
+    let n = (await this.prisma.denuncia.count({ where: { codigoSeguimiento: { not: null } } })) + 1001;
+    for (let intento = 0; intento < 5000; intento += 1) {
+      const codigo = `DEN-${year}-${String(n).padStart(7, '0')}`;
+      const existe = await this.prisma.denuncia.findFirst({ where: { codigoSeguimiento: codigo } });
+      if (!existe) return codigo;
+      n += 1;
+    }
+    // último recurso: sufijo basado en tiempo
+    return `DEN-${year}-${Date.now().toString().slice(-7)}`;
   }
 
   // Current office = last servidor_denuncia row still open, else most recent.
@@ -141,6 +154,47 @@ export class DenunciasService {
     return this.prisma.evidencia.create({
       data: { denunciaId: id, urlArchivo: dto.urlArchivo, tipoArchivo: dto.tipoArchivo ?? null, descripcion: dto.descripcion ?? null },
     });
+  }
+
+  // Sube una foto o video a Supabase Storage y registra la evidencia.
+  async subirEvidencia(
+    usuarioId: string,
+    id: string,
+    file: { buffer: Buffer; mimetype: string; originalname: string; size: number } | undefined,
+    descripcion?: string,
+  ) {
+    const d = await this.propia(usuarioId, id);
+    if (d.enviadoEn) throw new BadRequestException('La denuncia ya fue enviada');
+    if (!file) throw new BadRequestException('Adjunta un archivo');
+    const mime = file.mimetype || '';
+    if (!mime.startsWith('image/') && !mime.startsWith('video/')) {
+      throw new BadRequestException('Solo se permiten fotos o videos');
+    }
+    const { url } = await this.storage.subir(id, file);
+    const evidencia = await this.prisma.evidencia.create({
+      data: { denunciaId: id, urlArchivo: url, tipoArchivo: mime, descripcion: descripcion?.slice(0, 500) ?? null },
+    });
+    audit(usuarioId, 'denuncia.evidencia_subida', 'evidencia', evidencia.id, { tipo: mime });
+    return evidencia;
+  }
+
+  async actualizarEvidencia(usuarioId: string, id: string, evidenciaId: string, descripcion?: string) {
+    await this.propia(usuarioId, id);
+    const ev = await this.prisma.evidencia.findUnique({ where: { id: evidenciaId } });
+    if (!ev || ev.denunciaId !== id) throw new NotFoundException('Evidencia no encontrada');
+    return this.prisma.evidencia.update({
+      where: { id: evidenciaId },
+      data: { descripcion: descripcion?.slice(0, 500) ?? null },
+    });
+  }
+
+  async eliminarEvidencia(usuarioId: string, id: string, evidenciaId: string) {
+    await this.propia(usuarioId, id);
+    const ev = await this.prisma.evidencia.findUnique({ where: { id: evidenciaId } });
+    if (!ev || ev.denunciaId !== id) throw new NotFoundException('Evidencia no encontrada');
+    await this.storage.eliminarPorUrl(ev.urlArchivo);
+    await this.prisma.evidencia.delete({ where: { id: evidenciaId } });
+    return { ok: true };
   }
 
   async enviar(usuarioId: string, id: string, dto: EnviarDto) {
