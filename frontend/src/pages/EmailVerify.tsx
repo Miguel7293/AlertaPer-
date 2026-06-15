@@ -9,7 +9,7 @@ export default function EmailVerify() {
   const { user, refreshUser } = useAuth();
   const autoSendKey = user?.id ? `seguro_email_auto_sent_${user.id}` : '';
   const [devCode, setDevCode] = useState('');
-  const [deliveryMode, setDeliveryMode] = useState<'smtp' | 'demo' | ''>('');
+  const [deliveryMode, setDeliveryMode] = useState<'resend' | 'smtp' | 'demo' | ''>('');
   const [codigo, setCodigo] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -63,7 +63,7 @@ export default function EmailVerify() {
         </p>
         <div className="mt-4 space-y-4">
           {error && <Alert kind="error">{error}</Alert>}
-          {deliveryMode === 'smtp' && <Alert kind="success">Te enviamos el código. Revisa tu bandeja de entrada.</Alert>}
+          {(deliveryMode === 'resend' || deliveryMode === 'smtp') && <Alert kind="success">Te enviamos el código. Revisa tu bandeja de entrada.</Alert>}
           {devCode && <Alert kind="info">Código de demostración: <b>{devCode}</b> (configura SMTP para enviarlo por correo real).</Alert>}
           <Field label="Código de verificación" value={codigo} onChange={setCodigo} placeholder="6 dígitos" digitsOnly maxLength={6} inputMode="numeric" />
           <Button onClick={verify} disabled={busy || !codigo}>Verificar correo</Button>

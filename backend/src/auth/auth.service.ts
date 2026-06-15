@@ -117,7 +117,7 @@ export class AuthService {
         usuarioId,
         canal: 'email',
         plantilla: 'email_verify',
-        estado: delivery.mode === 'smtp' ? 'sent' : 'mocked',
+        estado: delivery.mode === 'demo' ? 'mocked' : 'sent',
       },
     });
     audit(usuarioId, 'auth.email_code_sent', 'denunciante', usuarioId);

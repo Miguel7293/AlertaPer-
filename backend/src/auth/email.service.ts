@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import nodemailer, { Transporter } from 'nodemailer';
 
 export type EmailDeliveryResult =
+  | { mode: 'resend'; messageId: string }
   | { mode: 'smtp'; messageId: string | false }
   | { mode: 'demo'; devCode: string };
 
@@ -19,6 +20,11 @@ export class EmailService implements OnModuleInit {
   constructor(private readonly config: ConfigService) {}
 
   async onModuleInit() {
+    if (this.hasResendConfig()) {
+      this.logger.log('Resend API configurada para el envío de correos');
+      return;
+    }
+
     const transporter = this.getTransporter();
     if (!transporter) {
       const message = 'SMTP no configurado: faltan SMTP_HOST, SMTP_USER o SMTP_PASS';
@@ -49,6 +55,10 @@ export class EmailService implements OnModuleInit {
     return !this.isProduction() && this.value('ALLOW_DEMO_EMAIL').toLowerCase() === 'true';
   }
 
+  private hasResendConfig(): boolean {
+    return Boolean(this.value('RESEND_API_KEY') && this.value('RESEND_FROM'));
+  }
+
   private errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : 'error desconocido';
   }
@@ -75,6 +85,8 @@ export class EmailService implements OnModuleInit {
   }
 
   async sendVerificationCode(to: string, code: string): Promise<EmailDeliveryResult> {
+    if (this.hasResendConfig()) return this.sendWithResend(to, code);
+
     const transporter = this.getTransporter();
     if (!transporter) {
       if (this.isDemoAllowed()) return { mode: 'demo', devCode: code };
@@ -110,5 +122,56 @@ export class EmailService implements OnModuleInit {
 
     this.logger.log(`Codigo de verificacion enviado a ${to}`);
     return { mode: 'smtp', messageId: result.messageId };
+  }
+
+  private async sendWithResend(to: string, code: string): Promise<EmailDeliveryResult> {
+    const appName = this.value('MAIL_APP_NAME') || 'DenunciaPE';
+    let response: Response;
+
+    try {
+      response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.value('RESEND_API_KEY')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: this.value('RESEND_FROM'),
+          to: [to],
+          subject: `${appName}: código de verificación`,
+          text: `Tu código de verificación es ${code}. Expira en 10 minutos.`,
+          html: `
+            <div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a">
+              <h2 style="margin:0 0 12px">Verifica tu correo</h2>
+              <p>Usa este código para continuar con tu denuncia:</p>
+              <p style="font-size:28px;font-weight:700;letter-spacing:4px;margin:18px 0">${code}</p>
+              <p style="color:#64748b">Expira en 10 minutos. Si no solicitaste este código, puedes ignorar este mensaje.</p>
+            </div>
+          `,
+        }),
+      });
+    } catch (error) {
+      this.logger.error(`No se pudo conectar con Resend: ${this.errorMessage(error)}`);
+      throw new ServiceUnavailableException(
+        'No pudimos enviar el código de verificación. Intenta nuevamente en unos minutos.',
+      );
+    }
+
+    const payload = (await response.json().catch(() => ({}))) as {
+      id?: string;
+      message?: string;
+      name?: string;
+    };
+    if (!response.ok || !payload.id) {
+      this.logger.error(
+        `Resend rechazó el correo (${response.status}): ${payload.message ?? payload.name ?? 'sin detalle'}`,
+      );
+      throw new ServiceUnavailableException(
+        'No pudimos enviar el código de verificación. Revisa la dirección e intenta nuevamente.',
+      );
+    }
+
+    this.logger.log(`Código de verificación enviado a ${to} mediante Resend`);
+    return { mode: 'resend', messageId: payload.id };
   }
 }
