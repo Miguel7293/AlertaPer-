@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ComplaintAssistant } from '../components/ComplaintAssistant';
+import { MapSelector } from '../components/MapSelector';
 import { Alert, Button, Card, Field, Page, Stepper, TextArea } from '../components/ui';
 import { API_URL, api, getAccessToken } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
@@ -189,6 +190,8 @@ export default function NewComplaint() {
   const [provincia, setProvincia] = useState('');
   const [distrito, setDistrito] = useState('');
   const [referenciaUbicacion, setReferencia] = useState('');
+  const [geoLatitud, setGeoLatitud] = useState<number | null>(null);
+  const [geoLongitud, setGeoLongitud] = useState<number | null>(null);
   const [narrativa, setNarrativa] = useState('');
   const [objetos, setObjetos] = useState<Objeto[]>([{ nombre: '', marcaModelo: '', valorAproximado: '', cantidad: 1 }]);
   const [observoSospechosos, setObservoSospechosos] = useState<Answer>('');
@@ -217,6 +220,8 @@ export default function NewComplaint() {
     provincia,
     distrito,
     referenciaUbicacion,
+    geoLatitud,
+    geoLongitud,
     narrativa,
     objetos,
     observoSospechosos,
@@ -226,7 +231,7 @@ export default function NewComplaint() {
     testigos,
     evidencias,
     consentimiento,
-  }), [step, reportId, tipo, hora, departamento, provincia, distrito, referenciaUbicacion, narrativa, objetos, observoSospechosos, sospPersonal, sospHuida, huboTestigos, testigos, evidencias, consentimiento]);
+  }), [step, reportId, tipo, hora, departamento, provincia, distrito, referenciaUbicacion, geoLatitud, geoLongitud, narrativa, objetos, observoSospechosos, sospPersonal, sospHuida, huboTestigos, testigos, evidencias, consentimiento]);
 
   useEffect(() => {
     if (!draftKey || draftRestored) return;
@@ -242,6 +247,8 @@ export default function NewComplaint() {
         if (saved.provincia !== undefined) setProvincia(saved.provincia);
         if (saved.distrito !== undefined) setDistrito(saved.distrito);
         if (saved.referenciaUbicacion !== undefined) setReferencia(saved.referenciaUbicacion);
+        if (saved.geoLatitud !== undefined) setGeoLatitud(saved.geoLatitud);
+        if (saved.geoLongitud !== undefined) setGeoLongitud(saved.geoLongitud);
         if (saved.narrativa !== undefined) setNarrativa(saved.narrativa);
         if (Array.isArray(saved.objetos) && saved.objetos.length) {
           setObjetos(saved.objetos.map((objeto: Objeto) => ({ ...objeto, cantidad: objeto.cantidad || 1 })));
@@ -286,6 +293,7 @@ export default function NewComplaint() {
       if (!provincia.trim()) return 'Completa la provincia.';
       if (!distrito.trim()) return 'Completa el distrito.';
       if (!referenciaUbicacion.trim()) return 'Agrega una referencia precisa del lugar.';
+      if (geoLatitud === null || geoLongitud === null) return 'Selecciona la ubicación en el mapa.';
     }
     if (current === 'narrativa' && narrativa.trim().length < 30) {
       return 'El relato debe tener al menos 30 caracteres.';
@@ -332,7 +340,7 @@ export default function NewComplaint() {
     setBusy(true);
     try {
       if (step === 'tipo') await save({ tipo });
-      if (step === 'lugar') await save({ hora, departamento, provincia, distrito, referenciaUbicacion });
+      if (step === 'lugar') await save({ hora, departamento, provincia, distrito, referenciaUbicacion, geoLatitud, geoLongitud });
       if (step === 'narrativa') await save({ narrativa: narrativa.trim() });
       if (step === 'sospechosos') await save({ observoSospechosos: observoSospechosos === 'si' });
       if (step === 'testigos') await save({ huboTestigos: huboTestigos === 'si' });
@@ -487,6 +495,8 @@ export default function NewComplaint() {
         provincia,
         distrito,
         referenciaUbicacion,
+        geoLatitud,
+        geoLongitud,
         narrativa: narrativa.trim(),
         observoSospechosos: observoSospechosos === 'si',
         huboTestigos: huboTestigos === 'si',
@@ -659,6 +669,7 @@ export default function NewComplaint() {
                   onDistrito={setDistrito}
                 />
                 <Field label="Referencia del lugar" value={referenciaUbicacion} onChange={setReferencia} placeholder="Av., cruce o punto de referencia" maxLength={200} />
+                <MapSelector onLocationSelect={(lat, lng) => { setGeoLatitud(lat); setGeoLongitud(lng); }} initialLat={geoLatitud || undefined} initialLng={geoLongitud || undefined} />
                 <WizardActions busy={busy} onBack={back} onContinue={continueStep} />
               </div>
             </Card>
@@ -952,6 +963,7 @@ export default function NewComplaint() {
                 <Row label="Tipo" value={tipo} />
                 <Row label="Cuándo" value={hora} />
                 <Row label="Ubicación" value={`${departamento}, ${provincia}, ${distrito}`} />
+                <Row label="Coordenadas GPS" value={geoLatitud !== null && geoLongitud !== null ? `${geoLatitud.toFixed(6)}, ${geoLongitud.toFixed(6)}` : '—'} />
                 <Row label="Referencia" value={referenciaUbicacion} />
                 <Row label="Relato" value={narrativa} />
                 <Row label="Objetos" value={objetos.map((objeto) => objeto.nombre).join(', ')} />
@@ -961,7 +973,7 @@ export default function NewComplaint() {
               </dl>
               <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 text-sm text-slate-600">
                 <input type="checkbox" checked={consentimiento} onChange={(event) => setConsentimiento(event.target.checked)} className="mt-0.5 h-4 w-4 accent-brand-600" />
-                <span>Declaro que la información es verdadera y autorizo su tratamiento conforme a la <a href="https://diariooficial.elperuano.pe/Normas/obtenerDocumento?idNorma=23">Ley 29733.</a></span>
+                <span>Declaro que la información es verdadera y autorizo su tratamiento conforme a la <a href="https://diariooficial.elperuano.pe/Normas/obtenerDocumento?idNorma=23"><b>Ley 29733.</b></a></span>
               </label>
               <WizardActions busy={busy} onBack={back} onContinue={enviar} continueLabel="Enviar denuncia" />
             </Card>
